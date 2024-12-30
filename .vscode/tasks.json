@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "init",
+      "group": "build",
+      "problemMatcher": [],
+      "label": "npm: init",
+      "presentation": {
+        "reveal": "silent"
+      }
+    }
+  ]
+}
