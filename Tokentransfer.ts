@@ -17,6 +17,7 @@ class TokenOperations {
   connection: Connection;
   payer: Keypair;
   mint: PublicKey;
+  minimumBalance: number = 100; // Minimum balance threshold
 
   constructor(payerKeypair: Keypair, mintAddress: string) {
     this.connection = new Connection(
@@ -36,11 +37,33 @@ class TokenOperations {
         walletAddress
       );
 
-      const balance = Number(tokenAccount.amount) / Math.pow(10, 9); // Convert to actual token amount
+      const balance = Number(tokenAccount.amount) / Math.pow(10, 9);
       console.log(`Token balance for ${walletAddress.toString()}: ${balance}`);
       return balance;
     } catch (error) {
       console.error("Error checking balance:", error);
+      throw error;
+    }
+  }
+
+  async ensureMinimumBalance(
+    walletAddress: PublicKey,
+    requiredAmount: number
+  ): Promise<boolean> {
+    try {
+      const currentBalance = await this.checkBalance(walletAddress);
+
+      if (currentBalance < requiredAmount) {
+        console.log(
+          `Balance insufficient. Current: ${currentBalance}, Required: ${requiredAmount}`
+        );
+        const mintAmount = Math.max(1000, requiredAmount * 2); // Mint either 1000 or double the required amount
+        await this.mintTokens(mintAmount, walletAddress);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Error ensuring minimum balance:", error);
       throw error;
     }
   }
@@ -54,14 +77,14 @@ class TokenOperations {
         destinationWallet
       );
 
-      console.log("Minting tokens...");
+      console.log(`Minting ${amount} tokens...`);
       const mintTxId = await mintTo(
         this.connection,
         this.payer,
         this.mint,
         tokenAccount.address,
         this.payer,
-        amount * Math.pow(10, 9) // Adjusting for decimals
+        amount * Math.pow(10, 9)
       );
 
       console.log(`Mint successful! Transaction ID: ${mintTxId}`);
@@ -75,13 +98,15 @@ class TokenOperations {
 
   async transferTokens(
     fromWallet: Keypair,
-    toWalletAddress: string, // Accept string address
+    toWalletAddress: string,
     amount: number
   ) {
     try {
+      // Check and ensure minimum balance before transfer
+      await this.ensureMinimumBalance(fromWallet.publicKey, amount);
+
       const recipientPubKey = new PublicKey(toWalletAddress);
 
-      // Get or create associated token accounts for both wallets
       const sourceAccount = await getOrCreateAssociatedTokenAccount(
         this.connection,
         this.payer,
@@ -105,10 +130,9 @@ class TokenOperations {
         sourceAccount.address,
         destinationAccount.address,
         fromWallet,
-        amount * Math.pow(10, 9) // Adjusting for decimals
+        amount * Math.pow(10, 9)
       );
 
-      // Monitor the transfer event
       await this.monitorTransferEvent(
         transferTxId,
         sourceAccount,
@@ -131,21 +155,19 @@ class TokenOperations {
       console.log("Waiting for transfer confirmation...");
       await this.connection.confirmTransaction(signature);
 
-      // Get updated account info
       const [sourceInfo, destInfo] = await Promise.all([
         getAccount(this.connection, sourceAccount.address),
         getAccount(this.connection, destinationAccount.address),
       ]);
 
-      // Create transfer event log
       const transferEvent = {
         type: "TokenTransfer",
         signature,
         timestamp: new Date().toISOString(),
         from: sourceAccount.address.toString(),
         to: destinationAccount.address.toString(),
-        fromBalance: Number(sourceInfo.amount) / Math.pow(10, 9), // Convert to actual token amount
-        toBalance: Number(destInfo.amount) / Math.pow(10, 9), // Convert to actual token amount
+        fromBalance: Number(sourceInfo.amount) / Math.pow(10, 9),
+        toBalance: Number(destInfo.amount) / Math.pow(10, 9),
         status: "Confirmed",
       };
 
@@ -159,35 +181,29 @@ class TokenOperations {
 }
 
 async function main() {
-  // Load your wallet keypair
-  const secretKeyString = fs.readFileSync("./my-solana-wallet.json", "utf8");
-  const payerKeypair = Keypair.fromSecretKey(
-    Uint8Array.from(JSON.parse(secretKeyString))
-  );
-
-  // Load token info
-  const tokenInfo = JSON.parse(fs.readFileSync("./token-info.json", "utf8"));
-
-  // Create token operations instance
-  const tokenOps = new TokenOperations(payerKeypair, tokenInfo.mintAddress);
-
-  // Recipient address - replace with your desired recipient address
-  const recipientAddress = "wHPN297UsAPwDsJDxKgCWCVTEWXBJ7divqnKW4fxKYj";
-
   try {
-    // Check initial balance
+    const secretKeyString = fs.readFileSync("./my-solana-wallet.json", "utf8");
+    const payerKeypair = Keypair.fromSecretKey(
+      Uint8Array.from(JSON.parse(secretKeyString))
+    );
+
+    const tokenInfo = JSON.parse(fs.readFileSync("./token-info.json", "utf8"));
+    const tokenOps = new TokenOperations(payerKeypair, tokenInfo.mintAddress);
+
+    const recipientAddress =
+      process.argv[2] || "wHPN297UsAPwDsJDxKgCWCVTEWXBJ7divqnKW4fxKYj";
+    const transferAmount = 50; // Amount to transfer
+
     console.log("\nChecking sender's initial balance...");
     await tokenOps.checkBalance(payerKeypair.publicKey);
 
-    // Mint tokens if needed (uncomment if you need to mint more tokens)
-    // console.log("\nMinting tokens...");
-    // await tokenOps.mintTokens(100, payerKeypair.publicKey);
-
-    // Transfer tokens
     console.log("\nTransferring tokens...");
-    await tokenOps.transferTokens(payerKeypair, recipientAddress, 50);
+    await tokenOps.transferTokens(
+      payerKeypair,
+      recipientAddress,
+      transferAmount
+    );
 
-    // Check final balances
     console.log("\nChecking final balances...");
     await tokenOps.checkBalance(payerKeypair.publicKey);
     await tokenOps.checkBalance(new PublicKey(recipientAddress));
@@ -196,7 +212,6 @@ async function main() {
   }
 }
 
-// Run the script
 if (process.argv.length < 3) {
   console.log("Please provide a recipient address:");
   console.log(
