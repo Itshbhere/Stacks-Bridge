@@ -2,54 +2,66 @@ import {
   Connection,
   Keypair,
   PublicKey,
-  sendAndConfirmTransaction,
-  Transaction,
+  LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import {
-  createInitializeMintInstruction,
   createMint,
   getMinimumBalanceForRentExemptMint,
-  MINT_SIZE,
-  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-
 import * as fs from "fs";
 
 async function createToken() {
   // Connect to testnet
   const connection = new Connection(
-    "https://api.testnet.solana.com",
+    "https://api.devnet.solana.com",
     "confirmed"
   );
 
   // Load your wallet keypair (payer)
-  // Replace path with your keypair JSON file
   const secretKeyString = fs.readFileSync("./my-solana-wallet.json", "utf8");
   const secretKey = Uint8Array.from(JSON.parse(secretKeyString));
   const payer = Keypair.fromSecretKey(secretKey);
 
-  // Create a new keypair for the mint
-  const mintKeypair = Keypair.generate();
+  console.log("Payer Public Key:", payer.publicKey.toString());
 
-  console.log("Creating token:", mintKeypair.publicKey.toString());
+  // Check wallet balance before proceeding
+  const balance = await connection.getBalance(payer.publicKey);
+  console.log(`Wallet balance: ${balance / LAMPORTS_PER_SOL} SOL`);
+
+  if (balance === 0) {
+    console.log("Wallet has no SOL. Requesting airdrop...");
+    try {
+      const signature = await connection.requestAirdrop(
+        payer.publicKey,
+        2 * LAMPORTS_PER_SOL
+      );
+      await connection.confirmTransaction(signature);
+      console.log("Airdrop successful!");
+    } catch (error) {
+      console.error("Airdrop failed:", error);
+      throw new Error("Failed to fund wallet. Please fund it manually.");
+    }
+  }
+
+  console.log("Creating token...");
 
   try {
     // Get the minimum lamports needed for rent exemption
     const lamports = await getMinimumBalanceForRentExemptMint(connection);
+    console.log(`Minimum lamports needed: ${lamports / LAMPORTS_PER_SOL} SOL`);
 
     // Create and initialize the token mint
     const mint = await createMint(
       connection,
-      payer, // Payer of the transaction
-      payer.publicKey, // Mint authority
-      payer.publicKey, // Freeze authority (you can use null to disable)
-      9 // Decimals (e.g., 9 decimals like SOL)
+      payer,
+      payer.publicKey,
+      payer.publicKey,
+      9
     );
 
     console.log("Token created successfully!");
     console.log("Token Mint Address:", mint.toString());
 
-    // Save mint address to file
     const tokenInfo = {
       mintAddress: mint.toString(),
       decimals: 9,
@@ -66,10 +78,9 @@ async function createToken() {
   }
 }
 
-// Function to check token info
 async function getTokenInfo(mintAddress: string) {
   const connection = new Connection(
-    "https://api.testnet.solana.com",
+    "https://api.devnet.solana.com",
     "confirmed"
   );
   const mint = new PublicKey(mintAddress);
@@ -82,7 +93,6 @@ async function getTokenInfo(mintAddress: string) {
   }
 }
 
-// Run the token creation
 createToken()
   .then(async (mintAddress) => {
     console.log("Waiting for confirmation...");
