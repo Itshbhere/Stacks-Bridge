@@ -1,3 +1,6 @@
+import fetch from "node-fetch";
+global.fetch = fetch;
+
 import {
   standardPrincipalCV,
   uintCV,
@@ -10,15 +13,17 @@ import {
   broadcastTransaction,
   fetchCallReadOnlyFunction,
 } from "@stacks/transactions";
-import { STACKS_MAINNET, STACKS_TESTNET } from "@stacks/network";
+import { STACKS_TESTNET } from "@stacks/network";
 import readline from "readline";
 
 // Configuration
 const SENDER_KEY =
-  "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01"; // Replace with your private key
+  "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
 const CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
 const CONTRACT_NAME = "Krypto";
 const network = STACKS_TESTNET;
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 20000; // 20 seconds in milliseconds
 
 // Create readline interface
 const rl = readline.createInterface({
@@ -36,7 +41,7 @@ const validateRecipientAddress = (address) => {
     if (!address || !address.startsWith("ST")) {
       return {
         isValid: false,
-        error: "Invalid address format. Must start with 'SP'",
+        error: "Invalid address format. Must start with 'ST' for testnet",
       };
     }
 
@@ -57,31 +62,69 @@ const validateAmount = (amount) => {
   return numAmount > 0 && Number.isInteger(numAmount);
 };
 
-// Get token balance
+// Get token balance with improved error handling
 async function getTokenBalance(address) {
   try {
-    const functionArgs = [standardPrincipalCV(address)];
+    console.log(`Fetching balance for address: ${address}`);
 
-    const response = await fetchCallReadOnlyFunction({
-      network,
+    const result1 = {
       contractAddress: CONTRACT_ADDRESS,
       contractName: CONTRACT_NAME,
       functionName: "get-balance",
-      functionArgs,
+      functionArgs: [standardPrincipalCV(address)],
+      network: STACKS_TESTNET,
       senderAddress: address,
-    });
+    };
 
-    return response.value.value;
+    const result = await fetchCallReadOnlyFunction(result1);
+
+    if (!result) {
+      throw new Error("No response received from balance check");
+    }
+
+    // console.log("Balance check response:", result);
+    const firstbalnce = result.value;
+    console.log(`Balance of: ${address}`, firstbalnce.value);
+    // Extract the balance value from the response
+    const balance = firstbalnce.value;
+    return balance;
   } catch (error) {
     console.error("Error getting balance:", error);
-    throw error;
+    // Return 0 as default balance in case of error
+    return 0n;
   }
+}
+
+// Verify transfer function
+async function verifyTransfer(
+  senderAddress,
+  recipientAddress,
+  amount,
+  initialSenderBalance,
+  initialRecipientBalance
+) {
+  const finalSenderBalance = await getTokenBalance(senderAddress);
+  const finalRecipientBalance = await getTokenBalance(recipientAddress);
+
+  console.log("\nTransfer verification:");
+  console.log(`Sender's final balance: ${finalSenderBalance}`);
+  console.log(`Recipient's final balance: ${finalRecipientBalance}`);
+  console.log(`Amount transferred: ${amount}`);
+
+  const senderBalanceChange = initialSenderBalance - finalSenderBalance;
+  const recipientBalanceChange =
+    finalRecipientBalance - initialRecipientBalance;
+
+  return (
+    senderBalanceChange === BigInt(amount) &&
+    recipientBalanceChange === BigInt(amount)
+  );
 }
 
 // Main transfer function
 async function transferTokens(recipientAddress, amount) {
   try {
-    const senderAddress = getAddressFromPrivateKey(SENDER_KEY, network.version);
+    const senderAddress = getAddressFromPrivateKey(SENDER_KEY, STACKS_TESTNET);
     console.log("\nSender's address:", senderAddress);
 
     // Get initial balances
@@ -91,6 +134,11 @@ async function transferTokens(recipientAddress, amount) {
 
     console.log(`Sender's initial balance: ${initialSenderBalance}`);
     console.log(`Recipient's initial balance: ${initialRecipientBalance}`);
+
+    // Validate sender has enough balance
+    if (initialSenderBalance < BigInt(amount)) {
+      throw new Error("Insufficient balance for transfer");
+    }
 
     const functionArgs = [
       uintCV(parseInt(amount)),
@@ -128,22 +176,44 @@ async function transferTokens(recipientAddress, amount) {
     console.log("\nTransaction successful!");
     console.log("Transaction ID:", broadcastResponse.txid);
     console.log(
-      `View in Explorer: https://explorer.stacks.co/txid/${broadcastResponse.txid}`
+      `View in Explorer: https://explorer.stacks.co/txid/${broadcastResponse.txid}?chain=testnet`
     );
 
-    // Wait for a few seconds to allow the transaction to be processed
+    // Initial delay
     console.log("\nWaiting for transaction to be processed...");
-    await new Promise((resolve) => setTimeout(resolve, 10000));
+    await new Promise((resolve) => setTimeout(resolve, 15000));
 
-    // Get final balances
-    console.log("\nVerifying transfer...");
-    const finalSenderBalance = await getTokenBalance(senderAddress);
-    const finalRecipientBalance = await getTokenBalance(recipientAddress);
+    // Verification with retries
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      console.log(`\nVerification attempt ${attempt} of ${MAX_RETRIES}...`);
 
-    console.log("\nTransfer verification:");
-    console.log(`Sender's final balance: ${finalSenderBalance}`);
-    console.log(`Recipient's final balance: ${finalRecipientBalance}`);
-    console.log(`Amount transferred: ${amount}`);
+      const isVerified = await verifyTransfer(
+        senderAddress,
+        recipientAddress,
+        amount,
+        initialSenderBalance,
+        initialRecipientBalance
+      );
+
+      if (isVerified) {
+        console.log("\nTransfer verified successfully!");
+        return broadcastResponse.txid;
+      } else {
+        if (attempt < MAX_RETRIES) {
+          console.log(
+            `\nVerification not successful. Waiting ${
+              RETRY_DELAY / 1000
+            } seconds before next attempt...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+        } else {
+          console.log(
+            "\nMax verification attempts reached. The transaction may still be processing."
+          );
+          console.log("Please check the explorer for the latest status.");
+        }
+      }
+    }
 
     return broadcastResponse.txid;
   } catch (error) {
@@ -154,7 +224,7 @@ async function transferTokens(recipientAddress, amount) {
 // Main execution
 async function main() {
   try {
-    console.log("=== Stacks Token Transfer Script ===\n");
+    console.log("=== Stacks Token Transfer Script (Testnet) ===\n");
 
     const recipientAddress = await question("Enter recipient address: ");
     const { isValid, error } = validateRecipientAddress(recipientAddress);
