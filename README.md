@@ -24,7 +24,7 @@ A bi-directional token bridge implementation enabling token transfers between So
 1. Clone the repository:
 
 ```bash
-git clone [repository-url]
+[git clone [repository-url]](https://github.com/Itshbhere/SPL-Token)
 cd solana-stacks-bridge
 ```
 
