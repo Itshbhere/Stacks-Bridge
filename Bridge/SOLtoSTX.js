@@ -26,6 +26,7 @@ class SolanaBridge {
     this.previousBalance = 0;
     this.transferQueue = [];
     this.isProcessingQueue = false;
+    this.decimals = config.decimals || 8;
   }
 
   async initialize() {
@@ -81,14 +82,12 @@ class SolanaBridge {
   }
 
   async handleSolTransfer(accountInfo, context) {
-    // Avoid processing the same slot twice
     if (context.slot <= this.lastProcessedSlot) return;
     this.lastProcessedSlot = context.slot;
 
     const currentBalance = accountInfo.lamports;
     const transferAmount = (currentBalance - this.previousBalance) / 1e9; // Convert lamports to SOL
 
-    // Update stored balance
     this.previousBalance = currentBalance;
 
     if (transferAmount !== 0) {
@@ -120,9 +119,13 @@ class SolanaBridge {
 
         if (transaction) {
           const recipient = this.extractRecipientAddress(transaction);
-          // Queue the Stacks transfer
+          // Convert the amount to the proper decimal representation
+          const scaledAmount = this.convertToScaledAmount(
+            Math.abs(transferAmount)
+          );
+
           this.queueStacksTransfer({
-            amount: Math.abs(transferAmount),
+            amount: scaledAmount,
             recipient,
             memo: `Bridge transfer from Solana tx: ${signatures[0].signature}`,
           });
@@ -131,6 +134,12 @@ class SolanaBridge {
     } catch (error) {
       console.error("Error processing Solana transfer:", error);
     }
+  }
+
+  convertToScaledAmount(amount) {
+    // Convert the amount to the specified decimal precision
+    // For example, if decimals = 8, then 0.1 SOL becomes 10000000
+    return Math.round(amount * Math.pow(10, this.decimals));
   }
 
   extractRecipientAddress(transaction) {
@@ -172,13 +181,13 @@ class SolanaBridge {
     console.log("Recipient:", recipient);
 
     const functionArgs = [
-      uintCV(Math.floor(amount)),
+      uintCV(amount), // Remove Math.floor() since we're now passing the properly scaled amount
       standardPrincipalCV(this.stacksSenderAddress),
       standardPrincipalCV(recipient),
       memo ? someCV(bufferCVFromString(memo)) : noneCV(),
     ];
 
-    console.log("Function Args:", functionArgs);
+    // console.log("Function Args:", functionArgs);
 
     const txOptions = {
       senderKey: this.stacksPrivateKey,
@@ -193,7 +202,7 @@ class SolanaBridge {
       fee: 2000n,
     };
 
-    console.log("Transaction Options:", txOptions);
+    // console.log("Transaction Options:", txOptions);
 
     const transaction = await makeContractCall(txOptions);
     const broadcastResponse = await broadcastTransaction({

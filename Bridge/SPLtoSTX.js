@@ -206,7 +206,7 @@ class TokenBridge {
       memo ? someCV(bufferCVFromString(memo)) : noneCV(),
     ];
 
-    console.log("Function Args:", functionArgs);
+    // console.log("Function Args:", functionArgs);
 
     console.log("Sender Key:", this.stacksPrivateKey);
     console.log("Contract Address:", this.stacksContractAddress);
@@ -226,7 +226,7 @@ class TokenBridge {
       fee: 2000n,
     };
 
-    console.log("Transaction Options:", txOptions);
+    // console.log("Transaction Options:", txOptions);
 
     const transaction = await makeContractCall(txOptions);
     const broadcastResponse = await broadcastTransaction({
