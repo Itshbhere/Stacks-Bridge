@@ -22,9 +22,8 @@ import {
 } from "@stacks/transactions";
 import { STACKS_TESTNET } from "@stacks/network";
 import fs from "fs";
-import fetch from "node-fetch";
 import readline from "readline";
-import { Console } from "console";
+import fetch from "node-fetch";
 
 global.fetch = fetch;
 

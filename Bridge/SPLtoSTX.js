@@ -12,6 +12,9 @@ import {
   broadcastTransaction,
 } from "@stacks/transactions";
 import { STACKS_MAINNET, STACKS_TESTNET } from "@stacks/network";
+import fetch from "node-fetch";
+
+global.fetch = fetch;
 
 class TokenBridge {
   constructor(config) {
@@ -42,7 +45,7 @@ class TokenBridge {
       // Initialize Stacks sender address
       this.stacksSenderAddress = getAddressFromPrivateKey(
         this.stacksPrivateKey,
-        this.network.version
+        this.network
       );
 
       console.log("Token Bridge Initialized");
@@ -203,6 +206,8 @@ class TokenBridge {
       memo ? someCV(bufferCVFromString(memo)) : noneCV(),
     ];
 
+    console.log("Function Args:", functionArgs);
+
     console.log("Sender Key:", this.stacksPrivateKey);
     console.log("Contract Address:", this.stacksContractAddress);
     console.log("Contract Name:", this.stacksContractName);
@@ -220,6 +225,8 @@ class TokenBridge {
       postConditionMode: 1,
       fee: 2000n,
     };
+
+    console.log("Transaction Options:", txOptions);
 
     const transaction = await makeContractCall(txOptions);
     const broadcastResponse = await broadcastTransaction({

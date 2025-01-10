@@ -182,7 +182,10 @@ class TokenOperations {
 
 async function main() {
   try {
-    const secretKeyString = fs.readFileSync("./my-solana-wallet.json", "utf8");
+    const secretKeyString = fs.readFileSync(
+      "./Bridge/my-solana-wallet.json",
+      "utf8"
+    );
     const payerKeypair = Keypair.fromSecretKey(
       Uint8Array.from(JSON.parse(secretKeyString))
     );
