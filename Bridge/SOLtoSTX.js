@@ -128,7 +128,7 @@ class SolanaBridge {
 
   convertToMicroSTX(amount) {
     // Convert the amount to microSTX (6 decimal places)
-    return Math.round(amount * 1e6);
+    return amount;
   }
 
   extractRecipientAddress(transaction) {
@@ -180,7 +180,11 @@ class SolanaBridge {
       fee: BigInt(2000),
     };
 
+    console.log("Creating STX Transfer Transaction", txOptions);
+
     const transaction = await makeSTXTokenTransfer(txOptions);
+
+    console.log("Broadcasting STX Transfer Transaction", transaction);
     const broadcastResponse = await broadcastTransaction({
       transaction,
       network: this.network,
