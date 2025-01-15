@@ -128,7 +128,7 @@ class SolanaBridge {
 
   convertToMicroSTX(amount) {
     // Convert the amount to microSTX (6 decimal places)
-    return amount;
+    return Math.round(amount * 1e6);
   }
 
   extractRecipientAddress(transaction) {
@@ -169,6 +169,22 @@ class SolanaBridge {
     console.log("Amount:", amount, "microSTX");
     console.log("Recipient:", recipient);
 
+    async function getAccountNonce(address) {
+      try {
+        const response = await fetch(
+          `https://api.testnet.hiro.so/extended/v1/address/${address}/nonces`
+        );
+        const data = await response.json();
+        return data.possible_next_nonce;
+      } catch (error) {
+        console.error("Error fetching nonce:", error);
+        throw new Error("Failed to fetch account nonce");
+      }
+    }
+
+    const nonce = await getAccountNonce(this.stacksSenderAddress);
+    console.log(`Using nonce: ${nonce}`);
+
     const txOptions = {
       recipient,
       amount: BigInt(amount),
@@ -176,15 +192,15 @@ class SolanaBridge {
       network: this.network,
       memo: memo,
       anchorMode: 3,
-      nonce: 0, // Will be automatically set
+      nonce: nonce, // Will be automatically set
       fee: BigInt(2000),
     };
 
-    console.log("Creating STX Transfer Transaction", txOptions);
+    console.log("Creating STX Transfer Transaction");
 
     const transaction = await makeSTXTokenTransfer(txOptions);
 
-    console.log("Broadcasting STX Transfer Transaction", transaction);
+    console.log("Broadcasting STX Transfer Transaction");
     const broadcastResponse = await broadcastTransaction({
       transaction,
       network: this.network,
