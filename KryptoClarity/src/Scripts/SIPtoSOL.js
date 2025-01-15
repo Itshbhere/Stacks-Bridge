@@ -17,12 +17,10 @@ import {
   fetchCallReadOnlyFunction,
 } from "@stacks/transactions";
 import { STACKS_TESTNET } from "@stacks/network";
-import fetch from "node-fetch";
+import { Buffer } from "buffer";
 
-// Only add this if running in Node.js environment
-if (typeof global !== "undefined" && !global.fetch) {
-  global.fetch = fetch;
-}
+// Remove the global.fetch assignment since we're in a browser environment
+// The browser already has fetch available
 
 export class DualTokenTransfer {
   constructor(solPayerKeypair, stacksSenderKey) {
