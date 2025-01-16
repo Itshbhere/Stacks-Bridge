@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { DualTokenTransfer } from "../Scripts/SIPtoSOL";
-// Import your STX to SOL script here
-import { STXtoSOL } from "../Scripts/STXtoSOL"; // Adjust the import path as needed
+import { STXtoSOL } from "../Scripts/STXtoSOL";
 import { Keypair } from "@solana/web3.js";
 import { Settings, ArrowDownUp } from "lucide-react";
+import config from "./config.json"; // Import the config file
 
 const TokenSwapInterface = () => {
   const [inputAmount, setInputAmount] = useState("");
@@ -26,23 +26,24 @@ const TokenSwapInterface = () => {
 
   const initializeTransfers = async () => {
     try {
-      // Initialize SIP010 transfer
-      const secretKey = new Uint8Array([
-        212, 23, 12, 221, 150, 160, 45, 194, 157, 232, 201, 89, 197, 25, 29, 50,
-        40, 41, 241, 182, 153, 131, 106, 82, 139, 115, 7, 118, 79, 52, 2, 115,
-        126, 111, 121, 138, 203, 35, 78, 194, 9, 131, 203, 115, 130, 101, 13,
-        82, 182, 81, 103, 149, 89, 27, 128, 55, 139, 213, 194, 195, 245, 178,
-        105, 254
-      ]);
-      const solanaKeypair = Keypair.fromSecretKey(secretKey);
+      // Initialize Solana keypair from config
+      const solanaKeypair = Keypair.fromSecretKey(
+        new Uint8Array(config.solanaKeypair.secretKey)
+      );
+
+      console.log(
+        Keypair.fromSecretKey(new Uint8Array(config.solanaKeypair.secretKey))
+      );
+
       const stacksSenderKey =
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
 
+      // Initialize SIP010 transfer
       const sipTransfer = new DualTokenTransfer(solanaKeypair, stacksSenderKey);
       setDualTransfer(sipTransfer);
 
       // Initialize STX transfer
-      const stxTransfer = new STXtoSOL(solanaKeypair, stacksSenderKey); // Adjust constructor parameters based on your script
+      const stxTransfer = new STXtoSOL(solanaKeypair, stacksSenderKey);
       setStxTransfer(stxTransfer);
     } catch (err) {
       setError("Failed to initialize wallet connections");
