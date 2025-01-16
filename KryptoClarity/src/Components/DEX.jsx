@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { DualTokenTransfer } from "../Scripts/SIPtoSOL";
+// Import your STX to SOL script here
+import { STXtoSOL } from "../Scripts/STXtoSOL"; // Adjust the import path as needed
 import { Keypair } from "@solana/web3.js";
 import { Settings, ArrowDownUp } from "lucide-react";
 
@@ -11,44 +13,56 @@ const TokenSwapInterface = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [dualTransfer, setDualTransfer] = useState(null);
+  const [stxTransfer, setStxTransfer] = useState(null);
+  const [isNativeSTX, setIsNativeSTX] = useState(false);
 
   // Base rates
   const SOL_TO_SIP = 169;
+  const SOL_TO_STX = 2;
 
   useEffect(() => {
-    initializeDualTransfer();
+    initializeTransfers();
   }, []);
 
-  const initializeDualTransfer = async () => {
+  const initializeTransfers = async () => {
     try {
+      // Initialize SIP010 transfer
       const secretKey = new Uint8Array([
         212, 23, 12, 221, 150, 160, 45, 194, 157, 232, 201, 89, 197, 25, 29, 50,
         40, 41, 241, 182, 153, 131, 106, 82, 139, 115, 7, 118, 79, 52, 2, 115,
         126, 111, 121, 138, 203, 35, 78, 194, 9, 131, 203, 115, 130, 101, 13,
         82, 182, 81, 103, 149, 89, 27, 128, 55, 139, 213, 194, 195, 245, 178,
-        105, 254,
+        105, 254
       ]);
       const solanaKeypair = Keypair.fromSecretKey(secretKey);
       const stacksSenderKey =
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
 
-      const transfer = new DualTokenTransfer(solanaKeypair, stacksSenderKey);
-      setDualTransfer(transfer);
+      const sipTransfer = new DualTokenTransfer(solanaKeypair, stacksSenderKey);
+      setDualTransfer(sipTransfer);
+
+      // Initialize STX transfer
+      const stxTransfer = new STXtoSOL(solanaKeypair, stacksSenderKey); // Adjust constructor parameters based on your script
+      setStxTransfer(stxTransfer);
     } catch (err) {
       setError("Failed to initialize wallet connections");
       console.error("Initialization error:", err);
     }
   };
 
-  const calculateSwap = useCallback((amount, isSolToSip) => {
-    if (!amount) return "";
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount)) return "";
+  const calculateSwap = useCallback(
+    (amount, isSolToToken) => {
+      if (!amount) return "";
+      const numAmount = parseFloat(amount);
+      if (isNaN(numAmount)) return "";
 
-    return isSolToSip
-      ? (numAmount * SOL_TO_SIP).toFixed(4)
-      : (numAmount / SOL_TO_SIP).toFixed(4);
-  }, []);
+      const rate = isNativeSTX ? SOL_TO_STX : SOL_TO_SIP;
+      return isSolToToken
+        ? (numAmount * rate).toFixed(4)
+        : (numAmount / rate).toFixed(4);
+    },
+    [isNativeSTX]
+  );
 
   const handleInputChange = (value) => {
     setInputAmount(value);
@@ -65,8 +79,18 @@ const TokenSwapInterface = () => {
     setSuccess("");
   };
 
+  const toggleTokenType = () => {
+    setIsNativeSTX(!isNativeSTX);
+    setInputAmount("");
+    setOutputAmount("");
+    setError("");
+    setSuccess("");
+  };
+
   const handleSwap = async () => {
-    if (!dualTransfer) {
+    const transfer = isNativeSTX ? stxTransfer : dualTransfer;
+
+    if (!transfer) {
       setError("Transfer service not initialized");
       return;
     }
@@ -80,16 +104,24 @@ const TokenSwapInterface = () => {
         throw new Error("Please enter a valid amount");
       }
 
-      const result = await dualTransfer.executeTransfers(
-        parseFloat(isReversed ? inputAmount : outputAmount),
-        parseFloat(isReversed ? outputAmount : inputAmount)
-      );
+      let result;
+      if (isNativeSTX) {
+        // Use your STX to SOL script's transfer method
+        result = await transfer.executeTransfers(
+          parseFloat(isReversed ? inputAmount : outputAmount),
+          parseFloat(isReversed ? outputAmount : inputAmount)
+        );
+      } else {
+        result = await transfer.executeTransfers(
+          parseFloat(isReversed ? inputAmount : outputAmount),
+          parseFloat(isReversed ? outputAmount : inputAmount)
+        );
+      }
 
       setSuccess(
-        `Swap successful! Stacks TX: ${result.stacksTransactionId.slice(
-          0,
-          8
-        )}... 
+        `Swap successful! ${
+          isNativeSTX ? "STX" : "Stacks"
+        } TX: ${result.stacksTransactionId.slice(0, 8)}... 
          Solana TX: ${result.solanaTransactionId.slice(0, 8)}...`
       );
     } catch (err) {
@@ -99,15 +131,38 @@ const TokenSwapInterface = () => {
     }
   };
 
+  const getTokenName = (isInput) => {
+    if (isNativeSTX) {
+      return isReversed ? (isInput ? "STX" : "SOL") : isInput ? "SOL" : "STX";
+    }
+    return isReversed
+      ? isInput
+        ? "SIP010"
+        : "SOL"
+      : isInput
+      ? "SOL"
+      : "SIP010";
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-gray-800 rounded-lg shadow-lg border border-gray-700">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-700">
           <h2 className="text-2xl font-bold">Swap</h2>
-          <button className="text-gray-400 hover:text-white">
-            <Settings className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={toggleTokenType}
+              className={`px-3 py-1 rounded-lg transition-colors ${
+                isNativeSTX ? "bg-blue-600" : "bg-gray-600"
+              }`}
+            >
+              {isNativeSTX ? "Native STX" : "SIP010"}
+            </button>
+            <button className="text-gray-400 hover:text-white">
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="p-6">
@@ -139,7 +194,7 @@ const TokenSwapInterface = () => {
                 className="w-full text-2xl bg-transparent border-none focus:outline-none"
               />
               <button className="bg-gray-600 px-4 py-2 rounded-lg hover:bg-gray-500 transition-colors">
-                {isReversed ? "SIP010" : "SOL"}
+                {getTokenName(true)}
               </button>
             </div>
           </div>
@@ -168,7 +223,7 @@ const TokenSwapInterface = () => {
                 className="w-full text-2xl bg-transparent border-none focus:outline-none"
               />
               <button className="bg-gray-600 px-4 py-2 rounded-lg hover:bg-gray-500 transition-colors">
-                {isReversed ? "SOL" : "SIP010"}
+                {getTokenName(false)}
               </button>
             </div>
           </div>
@@ -178,9 +233,13 @@ const TokenSwapInterface = () => {
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Rate</span>
               <span>
-                1 {isReversed ? "SIP010" : "SOL"} ={" "}
-                {isReversed ? (1 / SOL_TO_SIP).toFixed(4) : SOL_TO_SIP}{" "}
-                {isReversed ? "SOL" : "SIP010"}
+                1 {getTokenName(true)} ={" "}
+                {isReversed
+                  ? (1 / (isNativeSTX ? SOL_TO_STX : SOL_TO_SIP)).toFixed(4)
+                  : isNativeSTX
+                  ? SOL_TO_STX
+                  : SOL_TO_SIP}{" "}
+                {getTokenName(false)}
               </span>
             </div>
           </div>

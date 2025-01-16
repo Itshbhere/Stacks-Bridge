@@ -19,9 +19,6 @@ import {
 import { STACKS_TESTNET } from "@stacks/network";
 import { Buffer } from "buffer";
 
-// Remove the global.fetch assignment since we're in a browser environment
-// The browser already has fetch available
-
 export class DualTokenTransfer {
   constructor(solPayerKeypair, stacksSenderKey) {
     // Initialize Solana configuration
@@ -143,6 +140,25 @@ export class DualTokenTransfer {
     console.log(`Solana Recipient: ${this.RECIPIENT_SOLANA_ADDRESS}\n`);
 
     try {
+      // First check Solana balance
+      console.log("\nChecking Solana balance...");
+      const solanaBalance = await this.checkSolanaBalance(
+        this.solPayer.publicKey
+      );
+
+      // Calculate required balance including a buffer for transaction fees
+      const requiredBalance = solAmount + 0.001; // Adding 0.001 SOL for transaction fees
+
+      if (solanaBalance < requiredBalance) {
+        throw new Error(
+          `Insufficient Solana balance. Required: ${requiredBalance} SOL, Available: ${solanaBalance} SOL`
+        );
+      }
+
+      console.log(
+        `Solana balance sufficient: ${solanaBalance} SOL available for transfer of ${solAmount} SOL`
+      );
+
       // Step 1: Execute Stacks transfer
       console.log("\nInitiating Stacks token transfer...");
       const stacksTxId = await this.transferStacksTokens(
