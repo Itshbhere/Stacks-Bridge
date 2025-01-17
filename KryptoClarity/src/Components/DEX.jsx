@@ -3,7 +3,8 @@ import { DualTokenTransfer } from "../Scripts/SIPtoSOL";
 import { STXtoSOL } from "../Scripts/STXtoSOL";
 import { Keypair } from "@solana/web3.js";
 import { Settings, ArrowDownUp } from "lucide-react";
-import config from "./config.json"; // Import the config file
+import axios from "axios";
+import config from "./config.json";
 
 const TokenSwapInterface = () => {
   const [inputAmount, setInputAmount] = useState("");
@@ -15,10 +16,60 @@ const TokenSwapInterface = () => {
   const [dualTransfer, setDualTransfer] = useState(null);
   const [stxTransfer, setStxTransfer] = useState(null);
   const [isNativeSTX, setIsNativeSTX] = useState(false);
+  const [solToStxRate, setSolToStxRate] = useState(2); // Default rate
 
-  // Base rates
-  const SOL_TO_SIP = 169;
-  const SOL_TO_STX = 2;
+  // Base rate for SIP only
+  const SOL_TO_SIP = 172;
+
+  const getPrice = async (pair) => {
+    const url = `https://api.kraken.com/0/public/Ticker?pair=${pair}`;
+    try {
+      const response = await axios.get(url);
+      const data = response.data;
+
+      if (data.error && data.error.length > 0) {
+        throw new Error(data.error.join(", "));
+      }
+
+      return parseFloat(data.result[pair].c[0]);
+    } catch (error) {
+      console.error(`Error fetching price for ${pair}: ${error.message}`);
+      return null;
+    }
+  };
+
+  const updateExchangeRate = async () => {
+    try {
+      const solUsdPair = "SOLUSD";
+      const stxUsdPair = "STXUSD";
+
+      const solPrice = await getPrice(solUsdPair);
+      const stxPrice = await getPrice(stxUsdPair);
+
+      if (solPrice && stxPrice) {
+        const newRate = solPrice / stxPrice;
+        setSolToStxRate(newRate);
+
+        // Recalculate output amount with new rate if there's an input amount
+        if (inputAmount) {
+          const newOutput = calculateSwap(inputAmount, !isReversed, newRate);
+          setOutputAmount(newOutput);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to update exchange rate:", err);
+    }
+  };
+
+  useEffect(() => {
+    // Initial rate update
+    updateExchangeRate();
+
+    // Update rate every 60 seconds
+    const interval = setInterval(updateExchangeRate, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     initializeTransfers();
@@ -26,23 +77,16 @@ const TokenSwapInterface = () => {
 
   const initializeTransfers = async () => {
     try {
-      // Initialize Solana keypair from config
       const solanaKeypair = Keypair.fromSecretKey(
         new Uint8Array(config.solanaKeypair.secretKey)
-      );
-
-      console.log(
-        Keypair.fromSecretKey(new Uint8Array(config.solanaKeypair.secretKey))
       );
 
       const stacksSenderKey =
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
 
-      // Initialize SIP010 transfer
       const sipTransfer = new DualTokenTransfer(solanaKeypair, stacksSenderKey);
       setDualTransfer(sipTransfer);
 
-      // Initialize STX transfer
       const stxTransfer = new STXtoSOL(solanaKeypair, stacksSenderKey);
       setStxTransfer(stxTransfer);
     } catch (err) {
@@ -52,17 +96,17 @@ const TokenSwapInterface = () => {
   };
 
   const calculateSwap = useCallback(
-    (amount, isSolToToken) => {
+    (amount, isSolToToken, currentRate = solToStxRate) => {
       if (!amount) return "";
       const numAmount = parseFloat(amount);
       if (isNaN(numAmount)) return "";
 
-      const rate = isNativeSTX ? SOL_TO_STX : SOL_TO_SIP;
+      const rate = isNativeSTX ? currentRate : SOL_TO_SIP;
       return isSolToToken
         ? (numAmount * rate).toFixed(4)
         : (numAmount / rate).toFixed(4);
     },
-    [isNativeSTX]
+    [isNativeSTX, solToStxRate]
   );
 
   const handleInputChange = (value) => {
@@ -107,7 +151,6 @@ const TokenSwapInterface = () => {
 
       let result;
       if (isNativeSTX) {
-        // Use your STX to SOL script's transfer method
         result = await transfer.executeTransfers(
           parseFloat(isReversed ? inputAmount : outputAmount),
           parseFloat(isReversed ? outputAmount : inputAmount)
@@ -236,9 +279,9 @@ const TokenSwapInterface = () => {
               <span>
                 1 {getTokenName(true)} ={" "}
                 {isReversed
-                  ? (1 / (isNativeSTX ? SOL_TO_STX : SOL_TO_SIP)).toFixed(4)
+                  ? (1 / (isNativeSTX ? solToStxRate : SOL_TO_SIP)).toFixed(4)
                   : isNativeSTX
-                  ? SOL_TO_STX
+                  ? solToStxRate.toFixed(4)
                   : SOL_TO_SIP}{" "}
                 {getTokenName(false)}
               </span>
