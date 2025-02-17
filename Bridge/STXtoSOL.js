@@ -7,10 +7,13 @@ import {
   Transaction,
 } from "@solana/web3.js";
 import {
-  makeSTXTokenTransfer,
+  makeContractCall,
   broadcastTransaction,
   AnchorMode,
   getAddressFromPrivateKey,
+  standardPrincipalCV,
+  uintCV,
+  PostConditionMode,
 } from "@stacks/transactions";
 import { STACKS_TESTNET } from "@stacks/network";
 import fs from "fs";
@@ -20,7 +23,7 @@ import fetch from "node-fetch";
 global.fetch = fetch;
 
 class DualTokenTransfer {
-  constructor(solPayerKeypair, stacksSenderKey) {
+  constructor(solPayerKeypair, stacksSenderKey, contractAddress) {
     // Initialize Solana configuration
     this.connection = new Connection(
       "https://api.devnet.solana.com",
@@ -31,12 +34,13 @@ class DualTokenTransfer {
 
     // Initialize Stacks configuration
     this.STACKS_SENDER_KEY = stacksSenderKey;
+    this.CONTRACT_ADDRESS = contractAddress;
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
     this.RETRY_DELAY = 20000;
   }
 
-  // Solana Methods
+  // Solana Methods remain the same
   async checkSolanaBalance(walletAddress) {
     try {
       const balance = await this.connection.getBalance(walletAddress);
@@ -69,7 +73,6 @@ class DualTokenTransfer {
         fromWallet,
       ]);
 
-      // Wait for confirmation
       await this.connection.confirmTransaction(signature, "confirmed");
       return signature;
     } catch (error) {
@@ -78,7 +81,7 @@ class DualTokenTransfer {
     }
   }
 
-  // Stacks Methods
+  // Modified Stacks Methods
   async getStacksBalance(address) {
     try {
       const response = await fetch(
@@ -94,7 +97,7 @@ class DualTokenTransfer {
     }
   }
 
-  async transferSTX(recipientAddress, amountInMicroSTX) {
+  async transferSTXToContract(amountInMicroSTX) {
     try {
       const senderAddress = getAddressFromPrivateKey(
         this.STACKS_SENDER_KEY,
@@ -123,22 +126,29 @@ class DualTokenTransfer {
       const nonce = await getAccountNonce(senderAddress);
       console.log(`Using nonce: ${nonce}`);
 
-      // Create STX transfer transaction
+      // Create contract call transaction
+      const [contractAddress, contractName] = this.CONTRACT_ADDRESS.split(".");
+      console.log(contractAddress, contractName);
+      const functionArgs = [uintCV(amountInMicroSTX)];
+      console.log(functionArgs);
+
       const txOptions = {
-        recipient: recipientAddress,
-        amount: BigInt(amountInMicroSTX),
         senderKey: this.STACKS_SENDER_KEY,
-        network: this.network,
-        memo: "STX",
+        contractAddress,
+        contractName,
+        functionName: "receive-stx",
+        functionArgs,
+        network: STACKS_TESTNET,
         anchorMode: AnchorMode.Any,
-        nonce: nonce,
-        fee: BigInt(2000), // Adjust fee as needed
+        nonce,
+        fee: BigInt(2000),
+        postConditionMode: PostConditionMode.Allow,
       };
 
-      const transaction = await makeSTXTokenTransfer(txOptions);
+      const transaction = await makeContractCall(txOptions);
       const broadcastResponse = await broadcastTransaction({
         transaction,
-        network: this.network,
+        network: STACKS_TESTNET,
       });
 
       if (broadcastResponse.error) {
@@ -151,19 +161,10 @@ class DualTokenTransfer {
     }
   }
 
-  async executeTransfers(
-    recipientStacksAddress,
-    recipientSolanaAddress,
-    amount
-  ) {
+  async executeTransfers(recipientSolanaAddress, amount) {
     console.log("=== Starting Dual Transfer ===\n");
 
     try {
-      // Validate Stacks address
-      if (!recipientStacksAddress.startsWith("ST")) {
-        throw new Error("Invalid Stacks address format");
-      }
-
       // Validate Solana address
       try {
         new PublicKey(recipientSolanaAddress);
@@ -174,12 +175,9 @@ class DualTokenTransfer {
       // Convert amount to microSTX (1 STX = 1,000,000 microSTX)
       const microSTXAmount = BigInt(amount) * BigInt(1000000);
 
-      // Step 1: Execute STX transfer
-      console.log("\nInitiating STX transfer...");
-      const stacksTxId = await this.transferSTX(
-        recipientStacksAddress,
-        microSTXAmount
-      );
+      // Step 1: Execute STX transfer to contract
+      console.log("\nInitiating STX transfer to contract...");
+      const stacksTxId = await this.transferSTXToContract(microSTXAmount);
       console.log("Stacks transaction ID:", stacksTxId);
       console.log(
         `View in Explorer: https://explorer.stacks.co/txid/${stacksTxId}?chain=testnet`
@@ -189,7 +187,7 @@ class DualTokenTransfer {
       console.log("\nWaiting for Stacks transaction verification...");
       await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY));
 
-      // Step 2: Execute Solana transfer after Stacks verification
+      // Step 2: Execute Solana transfer
       console.log("\nInitiating SOL transfer...");
       const solanaTxId = await this.transferSOL(
         this.solPayer,
@@ -230,9 +228,16 @@ class DualTokenTransfer {
       const stacksKey =
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
 
-      const dualTransfer = new DualTokenTransfer(solanaKeypair, stacksKey);
+      // You'll need to replace this with your actual contract address
+      const contractAddress =
+        "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA.Bridge";
 
-      const stacksAddress = await question("Enter Stacks recipient address: ");
+      const dualTransfer = new DualTokenTransfer(
+        solanaKeypair,
+        stacksKey,
+        contractAddress
+      );
+
       const solanaAddress = await question("Enter Solana recipient address: ");
       const amount = await question("Enter amount to transfer (in STX/SOL): ");
 
@@ -241,7 +246,6 @@ class DualTokenTransfer {
       }
 
       const result = await dualTransfer.executeTransfers(
-        stacksAddress,
         solanaAddress,
         Number(amount)
       );
