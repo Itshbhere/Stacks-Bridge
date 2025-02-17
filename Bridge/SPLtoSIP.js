@@ -10,11 +10,18 @@ import {
   makeContractCall,
   validateStacksAddress,
   broadcastTransaction,
+  contractPrincipalCV,
+  fetchCallReadOnlyFunction,
 } from "@stacks/transactions";
 import { STACKS_MAINNET, STACKS_TESTNET } from "@stacks/network";
 import fetch from "node-fetch";
 
 global.fetch = fetch;
+
+// Add BigInt serialization support
+BigInt.prototype.toJSON = function () {
+  return this.toString();
+};
 
 class TokenBridge {
   constructor(config) {
@@ -23,6 +30,8 @@ class TokenBridge {
     this.stacksPrivateKey = config.stacksPrivateKey;
     this.stacksContractAddress = config.stacksContractAddress;
     this.stacksContractName = config.stacksContractName;
+    this.stacksTokenContractAddress = config.stacksTokenContractAddress;
+    this.stacksTokenContractName = config.stacksTokenContractName;
     this.network = STACKS_TESTNET;
     this.lastProcessedSlot = 0;
     this.previousBalances = new Map();
@@ -51,11 +60,51 @@ class TokenBridge {
       console.log("Token Bridge Initialized");
       console.log("Solana Wallet:", this.solanaWalletAddress);
       console.log("Stacks Sender:", this.stacksSenderAddress);
+      console.log(
+        "Stacks Sending Contract:",
+        this.stacksContractAddress,
+        ".",
+        this.stacksContractName
+      );
+      console.log(
+        "Stacks Token Contract:",
+        this.stacksTokenContractAddress,
+        ".",
+        this.stacksTokenContractName
+      );
+
+      // Verify the token contract
+      await this.verifyTokenContract();
 
       await this.setupSolanaMonitor();
     } catch (error) {
       console.error("Initialization error:", error);
       throw error;
+    }
+  }
+
+  async verifyTokenContract() {
+    try {
+      // Try to call get-name on the token contract to verify it's a valid SIP-010 token
+      const tokenReadOptions = {
+        contractAddress: this.stacksTokenContractAddress,
+        contractName: this.stacksTokenContractName,
+        functionName: "get-name",
+        functionArgs: [],
+        network: this.network,
+        senderAddress: this.stacksSenderAddress,
+      };
+
+      const result = await fetchCallReadOnlyFunction(tokenReadOptions);
+      console.log("Token name verification successful:", result);
+    } catch (error) {
+      console.error(
+        "Failed to verify token contract. Check if it implements SIP-010 correctly:",
+        error
+      );
+      throw new Error(
+        `Token contract verification failed: ${error.message || error}`
+      );
     }
   }
 
@@ -181,11 +230,12 @@ class TokenBridge {
     while (this.transferQueue.length > 0) {
       const transfer = this.transferQueue.shift();
       try {
-        await this.executeStacksTransfer(transfer);
+        await this.executeLockTokenTransfer(transfer);
         // Add delay between transfers to avoid rate limiting
         await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (error) {
         console.error("Stacks transfer error:", error);
+        console.error("Error details:", error.message || "Unknown error");
         // On error, put the transfer back in queue
         this.transferQueue.unshift(transfer);
         await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -194,50 +244,92 @@ class TokenBridge {
     this.isProcessingQueue = false;
   }
 
-  async executeStacksTransfer({ amount, recipient, memo }) {
-    console.log("\nInitiating Stacks Transfer");
+  async executeLockTokenTransfer({ amount, recipient, memo }) {
+    console.log("\nInitiating Stacks Lock Token Transfer");
     console.log("Amount:", amount);
     console.log("Recipient:", recipient);
 
+    // Create a contractPrincipalCV for the token contract
+    const tokenContract = contractPrincipalCV(
+      this.stacksTokenContractAddress,
+      this.stacksTokenContractName
+    );
+
     const functionArgs = [
+      tokenContract,
       uintCV(Math.floor(amount)),
-      standardPrincipalCV(this.stacksSenderAddress),
       standardPrincipalCV(recipient),
-      memo ? someCV(bufferCVFromString(memo)) : noneCV(),
     ];
 
-    // console.log("Function Args:", functionArgs);
-
-    console.log("Sender Key:", this.stacksPrivateKey);
-    console.log("Contract Address:", this.stacksContractAddress);
-    console.log("Contract Name:", this.stacksContractName);
-    const network = STACKS_TESTNET;
+    // Safely log function args without JSON serialization issues
+    console.log("Function Args:", this.describeFunctionArgs(functionArgs));
+    console.log(
+      "Sending Contract:",
+      `${this.stacksContractAddress}.${this.stacksContractName}`
+    );
+    console.log(
+      "Token Contract:",
+      `${this.stacksTokenContractAddress}.${this.stacksTokenContractName}`
+    );
 
     const txOptions = {
       senderKey: this.stacksPrivateKey,
       contractAddress: this.stacksContractAddress,
       contractName: this.stacksContractName,
-      functionName: "transfer",
+      functionName: "lock-token", // Call the lock-token function
       functionArgs,
       validateWithAbi: true,
-      network,
+      network: this.network,
       anchorMode: 3,
       postConditionMode: 1,
       fee: 2000n,
     };
 
-    // console.log("Transaction Options:", txOptions);
+    try {
+      const transaction = await makeContractCall(txOptions);
+      console.log("Transaction prepared successfully");
 
-    const transaction = await makeContractCall(txOptions);
-    const broadcastResponse = await broadcastTransaction({
-      transaction,
-      network: this.network,
+      const broadcastResponse = await broadcastTransaction({
+        transaction,
+        network: this.network,
+      });
+
+      console.log("Stacks Lock Token Transfer Complete");
+      console.log("Transaction ID:", broadcastResponse.txid);
+
+      return broadcastResponse.txid;
+    } catch (error) {
+      console.error("Error executing lock-token transfer:", error);
+      if (error.message && error.message.includes("BadTraitImplementation")) {
+        console.error(
+          "The token contract does not correctly implement the SIP-010 trait."
+        );
+        console.error(
+          "Please verify that the token contract address and name are correct and that it implements all SIP-010 functions."
+        );
+      }
+      throw error;
+    }
+  }
+
+  // Helper method to safely describe function arguments without JSON serialization issues
+  describeFunctionArgs(args) {
+    return args.map((arg) => {
+      if (arg.type === 0) {
+        // uint
+        return `uintCV(${arg.value})`;
+      } else if (arg.type === 5) {
+        // principal
+        if (arg.address.type === 0) {
+          // standard principal
+          return `standardPrincipalCV(${arg.address.address})`;
+        } else if (arg.address.type === 1) {
+          // contract principal
+          return `contractPrincipalCV(${arg.address.address}, ${arg.address.contractName})`;
+        }
+      }
+      return `<${arg.type}>`;
     });
-
-    console.log("Stacks Transfer Complete");
-    console.log("Transaction ID:", broadcastResponse.txid);
-
-    return broadcastResponse.txid;
   }
 }
 
@@ -248,7 +340,10 @@ const bridge = new TokenBridge({
   stacksPrivateKey:
     "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01",
   stacksContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
-  stacksContractName: "Krypto",
+  stacksContractName: "Bridge",
+  // Make sure these point to a valid SIP-010 token contract
+  stacksTokenContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
+  stacksTokenContractName: "Krypto",
 });
 
 bridge
