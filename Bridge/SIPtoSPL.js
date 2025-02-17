@@ -13,6 +13,7 @@ import {
 import {
   standardPrincipalCV,
   uintCV,
+  noneCV,
   contractPrincipalCV,
   getAddressFromPrivateKey,
   makeContractCall,
@@ -28,12 +29,7 @@ import fetch from "node-fetch";
 global.fetch = fetch;
 
 class DualTokenTransfer {
-  constructor(
-    solPayerKeypair,
-    solMintAddress,
-    stacksSenderKey,
-    tokenContractAddress
-  ) {
+  constructor(solPayerKeypair, solMintAddress, stacksSenderKey) {
     // Initialize Solana configuration
     this.connection = new Connection(
       "https://api.devnet.solana.com",
@@ -45,15 +41,19 @@ class DualTokenTransfer {
 
     // Initialize Stacks configuration
     this.STACKS_SENDER_KEY = stacksSenderKey;
-    this.CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.CONTRACT_NAME = "Krypto";
-    this.TOKEN_CONTRACT_ADDRESS = tokenContractAddress; // Address of the SIP token contract
+    // Contract that has the receive-token function
+    this.RECEIVING_CONTRACT_ADDRESS =
+      "ST33424G9M8BE62BWP90DA2Z2289JMD0C0SSE4TT5";
+    this.RECEIVING_CONTRACT_NAME = "Bridge";
+    // The token contract address (SIP-010 token)
+    this.TOKEN_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    this.TOKEN_CONTRACT_NAME = "Krypto";
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
     this.RETRY_DELAY = 20000;
   }
 
-  // Solana Methods remain the same
+  // Solana methods remain the same...
   async checkSolanaBalance(walletAddress) {
     try {
       const tokenAccount = await getOrCreateAssociatedTokenAccount(
@@ -111,13 +111,10 @@ class DualTokenTransfer {
   // Modified Stacks Methods
   async getStacksBalance(address) {
     try {
-      console.log(`Fetching Stacks balance for address: ${address}`);
-      const [contractAddr, contractName] =
-        this.TOKEN_CONTRACT_ADDRESS.split(".");
-
+      console.log(`Fetching Stacks token balance for address: ${address}`);
       const result = await fetchCallReadOnlyFunction({
-        contractAddress: contractAddr,
-        contractName: contractName,
+        contractAddress: this.TOKEN_CONTRACT_ADDRESS,
+        contractName: this.TOKEN_CONTRACT_NAME,
         functionName: "get-balance",
         functionArgs: [standardPrincipalCV(address)],
         network: this.network,
@@ -125,12 +122,12 @@ class DualTokenTransfer {
       });
 
       if (!result) {
-        throw new Error("No response received from Stacks balance check");
+        throw new Error("No response received from token balance check");
       }
       console.log("Balance check response:", result.value.value);
       return BigInt(result.value.value);
     } catch (error) {
-      console.error("Error getting Stacks balance:", error);
+      console.error("Error getting token balance:", error);
       return BigInt(0);
     }
   }
@@ -145,24 +142,22 @@ class DualTokenTransfer {
       const initialSenderBalance = await this.getStacksBalance(senderAddress);
 
       if (initialSenderBalance < BigInt(amount)) {
-        throw new Error("Insufficient Stacks token balance for transfer");
+        throw new Error("Insufficient token balance for transfer");
       }
 
-      // Create contract principal for the token contract
-      const [tokenContractAddr, tokenContractName] =
-        this.TOKEN_CONTRACT_ADDRESS.split(".");
-      const tokenContractPrincipal = contractPrincipalCV(
-        tokenContractAddr,
-        tokenContractName
-      );
-
-      const functionArgs = [tokenContractPrincipal, uintCV(parseInt(amount))];
+      // Create the function arguments for the token transfer
+      const functionArgs = [
+        uintCV(parseInt(amount)), // amount
+        standardPrincipalCV(senderAddress), // sender
+        standardPrincipalCV(this.RECEIVING_CONTRACT_ADDRESS), // recipient (the contract)
+        noneCV(), // memo (optional)
+      ];
 
       const txOptions = {
         senderKey: this.STACKS_SENDER_KEY,
-        contractAddress: this.CONTRACT_ADDRESS,
-        contractName: this.CONTRACT_NAME,
-        functionName: "receive-token",
+        contractAddress: this.TOKEN_CONTRACT_ADDRESS,
+        contractName: this.TOKEN_CONTRACT_NAME,
+        functionName: "transfer",
         functionArgs,
         validateWithAbi: true,
         network: this.network,
@@ -198,8 +193,8 @@ class DualTokenTransfer {
         throw new Error("Invalid Solana address format");
       }
 
-      // Step 1: Execute Stacks token transfer to contract
-      console.log("\nInitiating Stacks token transfer to contract...");
+      // Step 1: Transfer tokens from sender to receiving contract
+      console.log("\nInitiating token transfer to receiving contract...");
       const stacksTxId = await this.transferStacksTokensToContract(
         amount.toString()
       );
@@ -256,15 +251,10 @@ class DualTokenTransfer {
       const stacksKey =
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
 
-      // You'll need to replace this with your actual token contract address
-      const tokenContractAddress =
-        "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA.Krypto";
-
       const dualTransfer = new DualTokenTransfer(
         solanaKeypair,
         tokenInfo.mintAddress,
-        stacksKey,
-        tokenContractAddress
+        stacksKey
       );
 
       const solanaAddress = await question("Enter Solana recipient address: ");
