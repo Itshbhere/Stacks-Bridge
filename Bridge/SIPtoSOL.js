@@ -10,6 +10,7 @@ import {
   standardPrincipalCV,
   uintCV,
   noneCV,
+  contractPrincipalCV,
   getAddressFromPrivateKey,
   makeContractCall,
   validateStacksAddress,
@@ -36,14 +37,20 @@ export class DualTokenTransfer {
 
     // Initialize Stacks configuration
     this.STACKS_SENDER_KEY = stacksSenderKey;
-    this.CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.CONTRACT_NAME = "Krypto";
+
+    // Token contract information
+    this.TOKEN_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    this.TOKEN_CONTRACT_NAME = "KryptoToken";
+
+    // Bridge contract information
+    this.BRIDGE_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    this.BRIDGE_CONTRACT_NAME = "Bridges";
+
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
     this.RETRY_DELAY = 20000;
 
-    // Hardcoded recipient addresses
-    this.RECIPIENT_STACKS_ADDRESS = "ST33Y26J2EZW5SJSDRKFJVE97P40ZYYR7K3PATCNF";
+    // Hardcoded recipient address for Solana only
     this.RECIPIENT_SOLANA_ADDRESS =
       "Cfez4iZDiEvATzbyBKiN1KDaPoBkyn82yuTpCZtpgtG4";
   }
@@ -88,31 +95,34 @@ export class DualTokenTransfer {
     }
   }
 
-  async transferStacksTokens(amount) {
+  async approveTokens(amount) {
     try {
       const senderAddress = getAddressFromPrivateKey(
         this.STACKS_SENDER_KEY,
         this.network
       );
 
-      const initialSenderBalance = await this.getStacksBalance(senderAddress);
+      const bridgeContractAddress = this.BRIDGE_CONTRACT_ADDRESS;
 
-      if (initialSenderBalance < BigInt(amount)) {
-        throw new Error("Insufficient Stacks balance for transfer");
+      // Check token balance before approval
+      const tokenBalance = await this.getStacksBalance(senderAddress);
+      console.log(`Current token balance: ${tokenBalance.toString()}`);
+
+      if (tokenBalance < BigInt(amount)) {
+        throw new Error("Insufficient token balance for approval");
       }
 
+      // Call the approve function from the token contract
       const functionArgs = [
-        uintCV(parseInt(amount)),
-        standardPrincipalCV(senderAddress),
-        standardPrincipalCV(this.RECIPIENT_STACKS_ADDRESS),
-        noneCV(),
+        standardPrincipalCV(bridgeContractAddress),
+        uintCV(BigInt(amount)),
       ];
 
       const txOptions = {
         senderKey: this.STACKS_SENDER_KEY,
-        contractAddress: this.CONTRACT_ADDRESS,
-        contractName: this.CONTRACT_NAME,
-        functionName: "transfer",
+        contractAddress: this.TOKEN_CONTRACT_ADDRESS,
+        contractName: this.TOKEN_CONTRACT_NAME,
+        functionName: "approve",
         functionArgs,
         validateWithAbi: true,
         network: this.network,
@@ -131,53 +141,157 @@ export class DualTokenTransfer {
         throw new Error(broadcastResponse.error);
       }
 
+      console.log(`Tokens approved. Transaction ID: ${broadcastResponse.txid}`);
       return broadcastResponse.txid;
     } catch (error) {
+      console.error("Error approving tokens:", error);
       throw error;
     }
   }
 
-  async executeTransfers(sip10Amount, solAmount) {
-    console.log("=== Starting Dual Transfer ===\n");
-    console.log(`SIP-10 Amount: ${sip10Amount}`);
-    console.log(`SOL Amount: ${solAmount}`);
-    console.log(`Stacks Recipient: ${this.RECIPIENT_STACKS_ADDRESS}`);
+  async transferFromUser(amount) {
+    try {
+      const senderAddress = getAddressFromPrivateKey(
+        this.STACKS_SENDER_KEY,
+        this.network
+      );
+
+      // Use contractPrincipalCV instead of standardPrincipalCV
+      const recipient = contractPrincipalCV(
+        this.BRIDGE_CONTRACT_ADDRESS,
+        this.BRIDGE_CONTRACT_NAME
+      );
+
+      const functionArgs = [recipient, uintCV(BigInt(amount))];
+
+      console.log("Function arguments for transfer-from:", functionArgs);
+
+      const txOptions = {
+        senderKey: this.STACKS_SENDER_KEY,
+        contractAddress: this.BRIDGE_CONTRACT_ADDRESS,
+        contractName: this.BRIDGE_CONTRACT_NAME,
+        functionName: "receive-token",
+        functionArgs,
+        validateWithAbi: true,
+        network: this.network,
+        anchorMode: 3,
+        postConditionMode: 1,
+        fee: BigInt(2000),
+      };
+
+      const transaction = await makeContractCall(txOptions);
+
+      console.log("Transaction created:", transaction);
+
+      const broadcastResponse = await broadcastTransaction({
+        transaction,
+        network: this.network,
+      });
+
+      if (broadcastResponse.error) {
+        throw new Error(broadcastResponse.error);
+      }
+
+      console.log(
+        `Tokens transferred. Transaction ID: ${broadcastResponse.txid}`
+      );
+      return broadcastResponse.txid;
+    } catch (error) {
+      console.error("Error transferring tokens from user:", error);
+      throw error;
+    }
+  }
+
+  async executeSwap(sip10Amount, solAmount) {
+    console.log("=== Starting Token Swap ===\n");
+    console.log(`SIP-10 Amount to send to contract: ${sip10Amount}`);
+    console.log(`SOL Amount to release: ${solAmount}`);
+    console.log(
+      `Token Contract: ${this.TOKEN_CONTRACT_ADDRESS}.${this.TOKEN_CONTRACT_NAME}`
+    );
+    console.log(
+      `Bridge Contract: ${this.BRIDGE_CONTRACT_ADDRESS}.${this.BRIDGE_CONTRACT_NAME}`
+    );
     console.log(`Solana Recipient: ${this.RECIPIENT_SOLANA_ADDRESS}\n`);
 
     try {
-      // Step 1: Execute Stacks transfer
-      console.log("\nInitiating Stacks token transfer...");
-      const stacksTxId = await this.transferStacksTokens(
-        sip10Amount.toString()
-      );
-      console.log("Stacks transaction ID:", stacksTxId);
+      // Step 1: Approve tokens for the bridge contract
+      console.log("\nApproving tokens for the bridge contract...");
+      const approvalTxId = await this.approveTokens(sip10Amount.toString());
+      console.log("Approval transaction ID:", approvalTxId);
 
-      // Wait for Stacks transaction verification
-      console.log("\nWaiting for Stacks transaction verification...");
+      // Wait for approval transaction verification
+      console.log("\nWaiting for approval transaction verification...");
+      await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY / 2));
+
+      // Step 2: Check allowance
+      const stacksAddress = getAddressFromPrivateKey(
+        this.STACKS_SENDER_KEY,
+        this.network
+      );
+      const allowance = await this.getAllowance(
+        stacksAddress,
+        this.BRIDGE_CONTRACT_ADDRESS
+      );
+      console.log(`Allowance for bridge contract: ${allowance.toString()}`);
+
+      // Step 3: Execute transfer-from to move tokens from user to bridge contract
+      console.log("\nTransferring tokens from user to bridge contract...");
+      const transferTxId = await this.transferFromUser(sip10Amount.toString());
+      console.log("Transfer transaction ID:", transferTxId);
+
+      // Wait for transfer transaction verification
+      console.log("\nWaiting for transfer transaction verification...");
       await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY));
 
-      // Step 2: Execute Solana transfer after Stacks verification
-      console.log("\nInitiating SOL transfer...");
+      // Step 4: Release SOL after Stacks transaction verifications
+      console.log("\nReleasing SOL to recipient...");
       const solanaTxId = await this.transferSOL(this.solPayer, solAmount);
       console.log("Solana transaction signature:", solanaTxId);
 
       return {
-        stacksTransactionId: stacksTxId,
+        approvalTransactionId: approvalTxId,
+        transferTransactionId: transferTxId,
         solanaTransactionId: solanaTxId,
         status: "completed",
       };
     } catch (error) {
-      console.error("Error in dual transfer:", error);
+      console.error("Error in token swap:", error);
       throw error;
+    }
+  }
+
+  async getAllowance(owner, spender) {
+    try {
+      const result = await fetchCallReadOnlyFunction({
+        contractAddress: this.TOKEN_CONTRACT_ADDRESS,
+        contractName: this.TOKEN_CONTRACT_NAME,
+        functionName: "get-allowance",
+        functionArgs: [
+          standardPrincipalCV(owner),
+          standardPrincipalCV(spender),
+        ],
+        network: this.network,
+        senderAddress: owner,
+      });
+
+      if (!result) {
+        throw new Error("No response received from allowance check");
+      }
+      console.log("Allowance check response:", result.value.value);
+      return BigInt(result.value.value);
+    } catch (error) {
+      console.error("Error getting allowance:", error);
+      return BigInt(0);
     }
   }
 
   async getStacksBalance(address) {
     try {
-      console.log(`Fetching Stacks balance for address: ${address}`);
+      console.log(`Fetching token balance for address: ${address}`);
       const result = await fetchCallReadOnlyFunction({
-        contractAddress: this.CONTRACT_ADDRESS,
-        contractName: this.CONTRACT_NAME,
+        contractAddress: this.TOKEN_CONTRACT_ADDRESS,
+        contractName: this.TOKEN_CONTRACT_NAME,
         functionName: "get-balance",
         functionArgs: [standardPrincipalCV(address)],
         network: this.network,
@@ -185,12 +299,12 @@ export class DualTokenTransfer {
       });
 
       if (!result) {
-        throw new Error("No response received from Stacks balance check");
+        throw new Error("No response received from token balance check");
       }
       console.log("Balance check response:", result.value.value);
       return BigInt(result.value.value);
     } catch (error) {
-      console.error("Error getting Stacks balance:", error);
+      console.error("Error getting token balance:", error);
       return BigInt(0);
     }
   }

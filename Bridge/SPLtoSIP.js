@@ -279,20 +279,23 @@ class TokenBridge {
       functionName: "lock-token", // Call the lock-token function
       functionArgs,
       validateWithAbi: true,
-      network: this.network,
+      network: STACKS_TESTNET,
       anchorMode: 3,
       postConditionMode: 1,
       fee: 2000n,
     };
 
+    console.log("Executing lock-token transfer...", txOptions);
+
     try {
       const transaction = await makeContractCall(txOptions);
-      console.log("Transaction prepared successfully");
 
       const broadcastResponse = await broadcastTransaction({
         transaction,
-        network: this.network,
+        network: STACKS_TESTNET,
       });
+
+      console.log(broadcastResponse);
 
       console.log("Stacks Lock Token Transfer Complete");
       console.log("Transaction ID:", broadcastResponse.txid);
