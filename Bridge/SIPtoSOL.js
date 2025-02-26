@@ -44,7 +44,7 @@ export class DualTokenTransfer {
 
     // Bridge contract information
     this.BRIDGE_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.BRIDGE_CONTRACT_NAME = "Bridgess";
+    this.BRIDGE_CONTRACT_NAME = "Bridg";
 
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
@@ -156,13 +156,13 @@ export class DualTokenTransfer {
         this.network
       );
 
-      // Use contractPrincipalCV instead of standardPrincipalCV
-      const recipient = contractPrincipalCV(
+      // Use contractPrincipalCV for the token contract
+      const tokenContract = contractPrincipalCV(
         this.TOKEN_CONTRACT_ADDRESS,
         this.TOKEN_CONTRACT_NAME
       );
 
-      const functionArgs = [recipient, uintCV(BigInt(amount))];
+      const functionArgs = [tokenContract, uintCV(BigInt(amount))];
 
       console.log("Function arguments for transfer-from:", functionArgs);
 
