@@ -40,11 +40,11 @@ export class DualTokenTransfer {
 
     // Token contract information
     this.TOKEN_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.TOKEN_CONTRACT_NAME = "KryptoToken";
+    this.TOKEN_CONTRACT_NAME = "KryptoTokens";
 
     // Bridge contract information
     this.BRIDGE_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.BRIDGE_CONTRACT_NAME = "Bridges";
+    this.BRIDGE_CONTRACT_NAME = "Bridgess";
 
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
@@ -158,8 +158,8 @@ export class DualTokenTransfer {
 
       // Use contractPrincipalCV instead of standardPrincipalCV
       const recipient = contractPrincipalCV(
-        this.BRIDGE_CONTRACT_ADDRESS,
-        this.BRIDGE_CONTRACT_NAME
+        this.TOKEN_CONTRACT_ADDRESS,
+        this.TOKEN_CONTRACT_NAME
       );
 
       const functionArgs = [recipient, uintCV(BigInt(amount))];
@@ -178,6 +178,8 @@ export class DualTokenTransfer {
         postConditionMode: 1,
         fee: BigInt(2000),
       };
+
+      console.log(txOptions);
 
       const transaction = await makeContractCall(txOptions);
 
