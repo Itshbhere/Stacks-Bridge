@@ -249,16 +249,21 @@ class TokenBridge {
     console.log("Amount:", amount);
     console.log("Recipient:", recipient);
 
+    const contractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    const contractName = "Bridg";
+
+    const tokenAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    const tokenName = "KryptoTokens";
+
     // Create a contractPrincipalCV for the token contract
-    const tokenContract = contractPrincipalCV(
-      this.stacksTokenContractAddress,
-      this.stacksTokenContractName
-    );
+    const BridgeContract = contractPrincipalCV(contractAddress, contractName);
+
+    const tokenContract = contractPrincipalCV(tokenAddress, tokenName);
 
     const functionArgs = [
       tokenContract,
       uintCV(Math.floor(amount)),
-      standardPrincipalCV(recipient),
+      BridgeContract,
     ];
 
     // Safely log function args without JSON serialization issues
@@ -274,8 +279,8 @@ class TokenBridge {
 
     const txOptions = {
       senderKey: this.stacksPrivateKey,
-      contractAddress: this.stacksContractAddress,
-      contractName: this.stacksContractName,
+      contractAddress: contractAddress,
+      contractName: contractName,
       functionName: "lock-token", // Call the lock-token function
       functionArgs,
       validateWithAbi: true,
@@ -343,10 +348,10 @@ const bridge = new TokenBridge({
   stacksPrivateKey:
     "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01",
   stacksContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
-  stacksContractName: "Bridge",
+  stacksContractName: "Bridg",
   // Make sure these point to a valid SIP-010 token contract
   stacksTokenContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
-  stacksTokenContractName: "Krypto",
+  stacksTokenContractName: "KryptoTokens",
 });
 
 bridge
