@@ -229,8 +229,7 @@ class DualTokenTransfer {
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
 
       // You'll need to replace this with your actual contract address
-      const contractAddress =
-        "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA.Bridgess";
+      const contractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA.Bridg";
 
       const dualTransfer = new DualTokenTransfer(
         solanaKeypair,

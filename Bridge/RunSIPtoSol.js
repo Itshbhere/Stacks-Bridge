@@ -1,6 +1,9 @@
 import { Keypair } from "@solana/web3.js";
 import { DualTokenTransfer } from "./SIPtoSOL.js"; // Assuming you saved the updated class in this file
-import { getAddressFromPrivateKey } from "@stacks/transactions";
+import {
+  getAddressFromPrivateKey,
+  contractPrincipalCV,
+} from "@stacks/transactions";
 import { STACKS_TESTNET } from "@stacks/network";
 import * as fs from "fs";
 
@@ -54,9 +57,14 @@ async function main() {
     );
     console.log(`Final SOL balance: ${finalSolBalance} SOL`);
 
-    const finalTokenBalance = await dualTransfer.getStacksBalance(
-      stacksAddress
+    const BRIDGE_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    const BRIDGE_CONTRACT_NAME = "Bridg";
+    const FinalAddress = contractPrincipalCV(
+      BRIDGE_CONTRACT_ADDRESS,
+      BRIDGE_CONTRACT_NAME
     );
+
+    const finalTokenBalance = await dualTransfer.getStacksBalance(FinalAddress);
     console.log(`Final KRYPT token balance: ${finalTokenBalance.toString()}`);
   } catch (error) {
     console.error("Error executing token swap:", error);

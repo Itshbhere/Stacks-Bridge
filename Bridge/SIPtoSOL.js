@@ -102,8 +102,9 @@ export class DualTokenTransfer {
         this.network
       );
 
+      //Issue 1
       const bridgeContractAddress = this.BRIDGE_CONTRACT_ADDRESS;
-
+      const bridgeContractName = this.BRIDGE_CONTRACT_NAME;
       // Check token balance before approval
       const tokenBalance = await this.getStacksBalance(senderAddress);
       console.log(`Current token balance: ${tokenBalance.toString()}`);
@@ -114,7 +115,7 @@ export class DualTokenTransfer {
 
       // Call the approve function from the token contract
       const functionArgs = [
-        standardPrincipalCV(bridgeContractAddress),
+        contractPrincipalCV(bridgeContractAddress, bridgeContractName),
         uintCV(BigInt(amount)),
       ];
 
@@ -156,21 +157,28 @@ export class DualTokenTransfer {
         this.network
       );
 
-      // Use contractPrincipalCV for the token contract
-      const tokenContract = contractPrincipalCV(
-        this.TOKEN_CONTRACT_ADDRESS,
-        this.TOKEN_CONTRACT_NAME
-      );
+      const initialSenderBalance = await this.getStacksBalance(senderAddress);
 
-      const functionArgs = [tokenContract, uintCV(BigInt(amount))];
+      if (initialSenderBalance < BigInt(amount)) {
+        throw new Error("Insufficient token balance for transfer");
+      }
 
-      console.log("Function arguments for transfer-from:", functionArgs);
+      // Create the function arguments for the token transfer
+      const functionArgs = [
+        uintCV(BigInt(amount)), // amount
+        standardPrincipalCV(senderAddress), // sender
+        contractPrincipalCV(
+          this.BRIDGE_CONTRACT_ADDRESS,
+          this.BRIDGE_CONTRACT_NAME
+        ), // recipient (the contract)
+        noneCV(), // memo (optional)
+      ];
 
       const txOptions = {
         senderKey: this.STACKS_SENDER_KEY,
-        contractAddress: this.BRIDGE_CONTRACT_ADDRESS,
-        contractName: this.BRIDGE_CONTRACT_NAME,
-        functionName: "receive-token",
+        contractAddress: this.TOKEN_CONTRACT_ADDRESS,
+        contractName: this.TOKEN_CONTRACT_NAME,
+        functionName: "transfer",
         functionArgs,
         validateWithAbi: true,
         network: this.network,
@@ -179,12 +187,7 @@ export class DualTokenTransfer {
         fee: BigInt(2000),
       };
 
-      console.log(txOptions);
-
       const transaction = await makeContractCall(txOptions);
-
-      console.log("Transaction created:", transaction);
-
       const broadcastResponse = await broadcastTransaction({
         transaction,
         network: this.network,
@@ -194,12 +197,8 @@ export class DualTokenTransfer {
         throw new Error(broadcastResponse.error);
       }
 
-      console.log(
-        `Tokens transferred. Transaction ID: ${broadcastResponse.txid}`
-      );
       return broadcastResponse.txid;
     } catch (error) {
-      console.error("Error transferring tokens from user:", error);
       throw error;
     }
   }
