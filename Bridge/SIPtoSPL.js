@@ -43,11 +43,11 @@ class DualTokenTransfer {
     this.STACKS_SENDER_KEY = stacksSenderKey;
     // Contract that has the receive-token function
     this.RECEIVING_CONTRACT_ADDRESS =
-      "ST33424G9M8BE62BWP90DA2Z2289JMD0C0SSE4TT5";
-    this.RECEIVING_CONTRACT_NAME = "Bridge";
+      "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    this.RECEIVING_CONTRACT_NAME = "Bridg";
     // The token contract address (SIP-010 token)
     this.TOKEN_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.TOKEN_CONTRACT_NAME = "Krypto";
+    this.TOKEN_CONTRACT_NAME = "KryptoTokens";
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
     this.RETRY_DELAY = 20000;
@@ -147,9 +147,12 @@ class DualTokenTransfer {
 
       // Create the function arguments for the token transfer
       const functionArgs = [
-        uintCV(parseInt(amount)), // amount
+        uintCV(BigInt(amount)), // amount
         standardPrincipalCV(senderAddress), // sender
-        standardPrincipalCV(this.RECEIVING_CONTRACT_ADDRESS), // recipient (the contract)
+        contractPrincipalCV(
+          this.RECEIVING_CONTRACT_ADDRESS,
+          this.RECEIVING_CONTRACT_NAME
+        ), // recipient (the contract)
         noneCV(), // memo (optional)
       ];
 
