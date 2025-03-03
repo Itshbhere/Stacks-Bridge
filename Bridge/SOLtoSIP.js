@@ -144,12 +144,7 @@ class SolanaBridge {
   }
 
   extractRecipientAddress(transaction) {
-    const BridgeContractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    const BridgeContractName = "Bridged";
-    const FinalAddress = contractPrincipalCV(
-      BridgeContractAddress,
-      BridgeContractName
-    );
+    const FinalAddress = "ST33Y26J2EZW5SJSDRKFJVE97P40ZYYR7K3PATCNF";
     return FinalAddress;
   }
 
@@ -181,33 +176,40 @@ class SolanaBridge {
   }
 
   async executeStacksTransfer({ amount, recipient, memo }) {
-    console.log("\nInitiating Stacks Transfer");
-    console.log("Amount:", amount);
-    console.log("Recipient:", recipient);
-    const FinalAmount = BigInt(10000000000);
+    const contractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    const contractName = "Bridged";
+
+    const tokenAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    const tokenName = "ADVT";
+
+    const RecipientAddress = "ST33424G9M8BE62BWP90DA2Z2289JMD0C0SSE4TT5";
+    // Create a contractPrincipalCV for the token contract
+    const BridgeContract = contractPrincipalCV(contractAddress, contractName);
+
+    const tokenContract = contractPrincipalCV(tokenAddress, tokenName);
+
     const functionArgs = [
-      uintCV(FinalAmount), // Remove Math.floor() since we're now passing the properly scaled amount
-      standardPrincipalCV(this.stacksSenderAddress),
-      recipient,
-      memo ? someCV(bufferCVFromString(memo)) : noneCV(),
+      tokenContract,
+      uintCV(Math.floor(amount)),
+      standardPrincipalCV(RecipientAddress),
     ];
 
     // console.log("Function Args:", functionArgs);
 
     const txOptions = {
       senderKey: this.stacksPrivateKey,
-      contractAddress: this.stacksContractAddress,
-      contractName: this.stacksContractName,
-      functionName: "transfer",
+      contractAddress: contractAddress,
+      contractName: contractName,
+      functionName: "lock-token", // Call the lock-token function
       functionArgs,
       validateWithAbi: true,
-      network: this.network,
+      network: STACKS_TESTNET,
       anchorMode: 3,
       postConditionMode: 1,
       fee: 2000n,
     };
 
-    // console.log("Transaction Options:", txOptions);
+    console.log("Transaction Options:", txOptions);
 
     const transaction = await makeContractCall(txOptions);
     const broadcastResponse = await broadcastTransaction({
