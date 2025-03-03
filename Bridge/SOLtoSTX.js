@@ -3,6 +3,7 @@ import {
   makeSTXTokenTransfer,
   broadcastTransaction,
   getAddressFromPrivateKey,
+  contractPrincipalCV,
 } from "@stacks/transactions";
 import { STACKS_MAINNET, STACKS_TESTNET } from "@stacks/network";
 import fetch from "node-fetch";
@@ -132,9 +133,13 @@ class SolanaBridge {
   }
 
   extractRecipientAddress(transaction) {
-    // In a real implementation, you would extract the recipient address from the transaction
-    // This is a placeholder implementation
-    return "ST33Y26J2EZW5SJSDRKFJVE97P40ZYYR7K3PATCNF";
+    const BridgeContractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    const BridgeContractName = "Bridged";
+    const FinalAddress = contractPrincipalCV(
+      BridgeContractAddress,
+      BridgeContractName
+    );
+    return FinalAddress;
   }
 
   async queueStacksTransfer(transfer) {

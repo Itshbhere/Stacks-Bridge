@@ -9,6 +9,7 @@ import {
   makeContractCall,
   validateStacksAddress,
   broadcastTransaction,
+  contractPrincipalCV,
 } from "@stacks/transactions";
 import { STACKS_MAINNET, STACKS_TESTNET } from "@stacks/network";
 import fetch from "node-fetch";
@@ -143,9 +144,13 @@ class SolanaBridge {
   }
 
   extractRecipientAddress(transaction) {
-    // In a real implementation, you would extract the recipient address from the transaction
-    // This is a placeholder implementation
-    return "ST33Y26J2EZW5SJSDRKFJVE97P40ZYYR7K3PATCNF";
+    const BridgeContractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+    const BridgeContractName = "Bridged";
+    const FinalAddress = contractPrincipalCV(
+      BridgeContractAddress,
+      BridgeContractName
+    );
+    return FinalAddress;
   }
 
   async queueStacksTransfer(transfer) {
@@ -179,11 +184,11 @@ class SolanaBridge {
     console.log("\nInitiating Stacks Transfer");
     console.log("Amount:", amount);
     console.log("Recipient:", recipient);
-
+    const FinalAmount = BigInt(10000000000);
     const functionArgs = [
-      uintCV(amount), // Remove Math.floor() since we're now passing the properly scaled amount
+      uintCV(FinalAmount), // Remove Math.floor() since we're now passing the properly scaled amount
       standardPrincipalCV(this.stacksSenderAddress),
-      standardPrincipalCV(recipient),
+      recipient,
       memo ? someCV(bufferCVFromString(memo)) : noneCV(),
     ];
 
@@ -223,7 +228,7 @@ const bridge = new SolanaBridge({
   stacksPrivateKey:
     "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01",
   stacksContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
-  stacksContractName: "Krypto",
+  stacksContractName: "ADVT",
 });
 
 bridge
