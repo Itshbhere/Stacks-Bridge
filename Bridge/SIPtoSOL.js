@@ -41,11 +41,11 @@ class DualTokenTransfer {
 
     // Token contract information
     this.TOKEN_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.TOKEN_CONTRACT_NAME = "KryptoTokens";
+    this.TOKEN_CONTRACT_NAME = "  ADVT";
 
     // Bridge contract information
     this.BRIDGE_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.BRIDGE_CONTRACT_NAME = "Bridg";
+    this.BRIDGE_CONTRACT_NAME = "Bridged";
 
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
@@ -218,24 +218,24 @@ class DualTokenTransfer {
 
     try {
       // Step 1: Approve tokens for the bridge contract
-      console.log("\nApproving tokens for the bridge contract...");
-      const approvalTxId = await this.approveTokens(sip10Amount.toString());
-      console.log("Approval transaction ID:", approvalTxId);
+      // console.log("\nApproving tokens for the bridge contract...");
+      // const approvalTxId = await this.approveTokens(sip10Amount.toString());
+      // console.log("Approval transaction ID:", approvalTxId);
 
-      // Wait for approval transaction verification
-      console.log("\nWaiting for approval transaction verification...");
-      await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY / 2));
+      // // Wait for approval transaction verification
+      // console.log("\nWaiting for approval transaction verification...");
+      // await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY / 2));
 
       // Step 2: Check allowance
       const stacksAddress = getAddressFromPrivateKey(
         this.STACKS_SENDER_KEY,
         this.network
       );
-      const allowance = await this.getAllowance(
-        stacksAddress,
-        this.BRIDGE_CONTRACT_ADDRESS
-      );
-      console.log(`Allowance for bridge contract: ${allowance.toString()}`);
+      // const allowance = await this.getAllowance(
+      //   stacksAddress,
+      //   this.BRIDGE_CONTRACT_ADDRESS
+      // );
+      // console.log(`Allowance for bridge contract: ${allowance.toString()}`);
 
       // Step 3: Execute transfer-from to move tokens from user to bridge contract
       console.log("\nTransferring tokens from user to bridge contract...");
