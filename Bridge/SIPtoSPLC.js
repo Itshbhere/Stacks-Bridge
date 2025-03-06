@@ -44,10 +44,10 @@ class DualTokenTransfer {
     // Contract that has the receive-token function
     this.RECEIVING_CONTRACT_ADDRESS =
       "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.RECEIVING_CONTRACT_NAME = "Bridg";
+    this.RECEIVING_CONTRACT_NAME = "Bridged";
     // The token contract address (SIP-010 token)
     this.TOKEN_CONTRACT_ADDRESS = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.TOKEN_CONTRACT_NAME = "KryptoTokens";
+    this.TOKEN_CONTRACT_NAME = "ADVT";
     this.network = STACKS_TESTNET;
     this.MAX_RETRIES = 3;
     this.RETRY_DELAY = 20000;
