@@ -20,10 +20,24 @@ import {
 import { STACKS_TESTNET } from "@stacks/network";
 import * as fs from "fs";
 import fetch from "node-fetch";
+import * as readline from "readline";
 
 // Only add this if running in Node.js environment
 if (typeof global !== "undefined" && !global.fetch) {
   global.fetch = fetch;
+}
+
+// Create readline interface for user input
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+// Promisify the question function
+function question(query) {
+  return new Promise((resolve) => {
+    rl.question(query, resolve);
+  });
 }
 
 class SIPtoSOLBridge {
@@ -59,7 +73,7 @@ class SIPtoSOLBridge {
 
     // Conversion rate (configurable)
     this.conversionRate = config.conversionRate || 0.1; // 10 SIP to 1 SOL
-    this.decimals = config.decimals || 4;
+    this.decimals = config.decimals || 6; // Updated to match STONE token
   }
 
   async initialize() {
@@ -91,17 +105,27 @@ class SIPtoSOLBridge {
       const solBalance = await this.connection.getBalance(
         this.solanaKeypair.publicKey
       );
+      console.log(`Solana Sender:  ${this.solanaKeypair.publicKey.toString()}`);
       console.log(`SOL balance: ${solBalance / LAMPORTS_PER_SOL} SOL`);
 
       // Check SIP token balance
       const tokenBalance = await this.getStacksTokenBalance(
         this.stacksSenderAddress
       );
-      console.log(`SIP token balance: ${tokenBalance.toString()}`);
+
+      // Convert to human-readable format with proper decimals
+      const readableBalance =
+        Number(tokenBalance) / Math.pow(10, this.decimals);
+      console.log(
+        `SIP token balance: ${tokenBalance.toString()} units (${readableBalance.toFixed(
+          this.decimals
+        )} tokens)`
+      );
 
       return {
         solBalance: solBalance / LAMPORTS_PER_SOL,
         tokenBalance,
+        readableTokenBalance: readableBalance,
       };
     } catch (error) {
       console.error("Error checking balances:", error);
@@ -133,13 +157,16 @@ class SIPtoSOLBridge {
   }
 
   async transferSIPtoSOL(sipAmount) {
+    // Convert to the raw amount with proper decimals
+    const rawAmount = BigInt(sipAmount) * BigInt(Math.pow(10, this.decimals));
+
     console.log("=== Starting SIP to SOL Bridge Transfer ===");
-    console.log(`SIP Amount to send: ${sipAmount}`);
+    console.log(`SIP Amount to send: ${sipAmount} tokens (${rawAmount} units)`);
 
     try {
       // Step 1: Lock tokens in the bridge contract
       console.log("\nLocking SIP tokens in bridge contract...");
-      const lockTxId = await this.lockTokensInBridge(sipAmount);
+      const lockTxId = await this.lockTokensInBridge(rawAmount);
       console.log("Lock transaction ID:", lockTxId);
 
       // Wait for lock transaction verification
@@ -147,7 +174,7 @@ class SIPtoSOLBridge {
       await new Promise((resolve) => setTimeout(resolve, this.RETRY_DELAY));
 
       // Step 2: Calculate the corresponding SOL amount
-      const solAmount = this.calculateSOLAmount(BigInt(sipAmount));
+      const solAmount = this.calculateSOLAmount(BigInt(rawAmount));
       console.log(`\nCalculated SOL amount to release: ${solAmount} SOL`);
 
       // Step 3: Transfer SOL to recipient
@@ -171,8 +198,10 @@ class SIPtoSOLBridge {
 
   calculateSOLAmount(sipAmount) {
     // Convert SIP amount to SOL based on conversion rate
-    // Adjust decimal places as needed
-    return Number(sipAmount) * this.conversionRate;
+    // Account for decimals in the conversion
+    return (
+      (Number(sipAmount) * this.conversionRate) / Math.pow(10, this.decimals)
+    );
   }
 
   async lockTokensInBridge(sipAmount) {
@@ -190,15 +219,21 @@ class SIPtoSOLBridge {
         senderAddress
       );
 
-      console.log("Initial sender balance:", initialSenderBalance.toString());
+      const readableBalance =
+        Number(initialSenderBalance) / Math.pow(10, this.decimals);
+      console.log(
+        `Initial sender balance: ${initialSenderBalance.toString()} units (${readableBalance.toFixed(
+          this.decimals
+        )} tokens)`
+      );
 
-      if (initialSenderBalance < BigInt(sipAmount)) {
+      if (initialSenderBalance < sipAmount) {
         throw new Error("Insufficient token balance for transfer");
       }
 
       // Create the function arguments for the token transfer
       const functionArgs = [
-        uintCV(BigInt(sipAmount)), // amount
+        uintCV(sipAmount), // amount
         standardPrincipalCV(senderAddress), // sender
         contractPrincipalCV(bridgeContractAddress, bridgeContractName), // recipient (the contract)
         noneCV(), // memo (optional)
@@ -276,18 +311,45 @@ async function main() {
       stacksPrivateKey:
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01",
       tokenContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
-      tokenContractName: "ADVT",
+      tokenContractName: "ADVT", // Updated to match your token name
       bridgeContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
       bridgeContractName: "Bridged",
-      conversionRate: 0.0000001, // Adjust as needed
+      conversionRate: 0.1, // Adjust as needed
+      decimals: 6, // Set to match your STONE token's decimals
     });
 
     // Initialize bridge
     await bridge.initialize();
 
-    // Execute transfer (example amount)
-    // For 10 STONE tokens with 6 decimal places
-    const sipAmount = 10 * 1000000;
+    // Get user input for amount to transfer
+    const userInput = await question(
+      "\nEnter the amount of SIP tokens to swap (e.g., 10): "
+    );
+
+    // Validate user input
+    const sipAmount = parseFloat(userInput);
+
+    if (isNaN(sipAmount) || sipAmount <= 0) {
+      console.error("Invalid amount. Please enter a positive number.");
+      rl.close();
+      return;
+    }
+
+    // Confirm the transaction
+    const confirmation = await question(
+      `\nYou are about to swap ${sipAmount} SIP tokens. Confirm? (y/n): `
+    );
+
+    if (
+      confirmation.toLowerCase() !== "y" &&
+      confirmation.toLowerCase() !== "yes"
+    ) {
+      console.log("Transaction cancelled by user.");
+      rl.close();
+      return;
+    }
+
+    // Execute transfer with user-provided amount
     const result = await bridge.transferSIPtoSOL(sipAmount);
 
     console.log("\n=== Transfer Result ===");
@@ -298,8 +360,11 @@ async function main() {
     // Check final balances
     console.log("\n=== Final Balances ===");
     await bridge.checkBalances();
+
+    rl.close();
   } catch (error) {
     console.error("Error executing SIP to SOL bridge:", error);
+    rl.close();
   }
 }
 

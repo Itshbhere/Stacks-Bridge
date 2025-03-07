@@ -2,7 +2,7 @@
 // This script allows users to enter an amount and get the conversion between SOL and SIP tokens
 
 // Set the current exchange ratio (1 SOL = X SIP tokens)
-const RATIO_SOL_TO_SIP = 12.5; // Example ratio, adjust as needed
+const RATIO_SOL_TO_SIP = 10; // Example ratio, adjust as needed
 
 /**
  * Converts SOL to SIP tokens
