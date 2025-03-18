@@ -21,6 +21,8 @@ import { STACKS_TESTNET } from "@stacks/network";
 import * as fs from "fs";
 import fetch from "node-fetch";
 import * as readline from "readline";
+import * as anchor from "@project-serum/anchor";
+import { BN } from "bn.js";
 
 // Only add this if running in Node.js environment
 if (typeof global !== "undefined" && !global.fetch) {
@@ -67,13 +69,39 @@ class SIPtoSOLBridge {
       "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
     this.bridgeContractName = config.bridgeContractName || "Bridged";
 
+    // Solana PDA and Program configuration
+    this.programId = new PublicKey(
+      config.programId || "HV2pqqq7dpW3JrxjhaWhC7etu6RjRLPzzSJ4FGDW49Cr"
+    );
+    this.pdaSeed = config.pdaSeed || "death_god";
+    this.pdaAddress = null;
+    this.pdaBump = null;
+
+    // Solana program
+    this.wallet = new anchor.Wallet(this.solanaKeypair);
+    this.provider = new anchor.AnchorProvider(this.connection, this.wallet, {
+      commitment: "confirmed",
+    });
+    anchor.setProvider(this.provider);
+
+    // Load the program
+    try {
+      const idl = JSON.parse(
+        fs.readFileSync(config.idlPath || "./idl.json", "utf-8")
+      );
+      this.program = new anchor.Program(idl, this.programId, this.provider);
+    } catch (error) {
+      console.error("Error loading program IDL:", error);
+      throw error;
+    }
+
     // Retry configuration
     this.MAX_RETRIES = 3;
     this.RETRY_DELAY = 20000;
 
     // Conversion rate (configurable)
     this.conversionRate = config.conversionRate || 0.1; // 10 SIP to 1 SOL
-    this.decimals = config.decimals || 6; // Updated to match STONE token
+    this.decimals = config.decimals || 6;
   }
 
   async initialize() {
@@ -86,11 +114,19 @@ class SIPtoSOLBridge {
       );
       console.log("Solana Recipient:", this.solanaRecipientAddress);
 
+      // Derive the PDA address and bump
+      const [pdaAddress, bump] = PublicKey.findProgramAddressSync(
+        [Buffer.from(this.pdaSeed)],
+        this.programId
+      );
+      this.pdaAddress = pdaAddress;
+      this.pdaBump = bump;
+
+      console.log("PDA address:", this.pdaAddress.toString());
+      console.log("PDA bump:", this.pdaBump);
+
       // Check initial balances
       await this.checkBalances();
-
-      // Set up Stacks monitoring if needed
-      // For simplicity, we're using a direct bridge call approach instead of monitoring
 
       return true;
     } catch (error) {
@@ -101,12 +137,19 @@ class SIPtoSOLBridge {
 
   async checkBalances() {
     try {
-      // Check Solana balance
-      const solBalance = await this.connection.getBalance(
+      // Check Solana balance of the PDA
+      const pdaBalance = await this.connection.getBalance(this.pdaAddress);
+      console.log(`PDA Address: ${this.pdaAddress.toString()}`);
+      console.log(`PDA SOL balance: ${pdaBalance / LAMPORTS_PER_SOL} SOL`);
+
+      // Check Solana balance of the wallet
+      const walletBalance = await this.connection.getBalance(
         this.solanaKeypair.publicKey
       );
-      console.log(`Solana Sender:  ${this.solanaKeypair.publicKey.toString()}`);
-      console.log(`SOL balance: ${solBalance / LAMPORTS_PER_SOL} SOL`);
+      console.log(`Wallet Address: ${this.solanaKeypair.publicKey.toString()}`);
+      console.log(
+        `Wallet SOL balance: ${walletBalance / LAMPORTS_PER_SOL} SOL`
+      );
 
       // Check SIP token balance
       const tokenBalance = await this.getStacksTokenBalance(
@@ -123,7 +166,8 @@ class SIPtoSOLBridge {
       );
 
       return {
-        solBalance: solBalance / LAMPORTS_PER_SOL,
+        pdaBalance: pdaBalance / LAMPORTS_PER_SOL,
+        walletBalance: walletBalance / LAMPORTS_PER_SOL,
         tokenBalance,
         readableTokenBalance: readableBalance,
       };
@@ -177,9 +221,9 @@ class SIPtoSOLBridge {
       const solAmount = this.calculateSOLAmount(BigInt(rawAmount));
       console.log(`\nCalculated SOL amount to release: ${solAmount} SOL`);
 
-      // Step 3: Transfer SOL to recipient
-      console.log("\nReleasing SOL to recipient...");
-      const solanaTxId = await this.transferSOL(
+      // Step 3: Transfer SOL from PDA to recipient
+      console.log("\nReleasing SOL from PDA to recipient...");
+      const solanaTxId = await this.transferSOLFromPDA(
         this.solanaRecipientAddress,
         solAmount
       );
@@ -206,14 +250,13 @@ class SIPtoSOLBridge {
 
   async lockTokensInBridge(sipAmount) {
     try {
-      const PKey =
-        "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
-      const senderAddress = getAddressFromPrivateKey(PKey, STACKS_TESTNET);
+      const PKey = this.stacksPrivateKey;
+      const senderAddress = this.stacksSenderAddress;
 
-      const tokenContractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-      const tokenContractName = "ADVT";
-      const bridgeContractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-      const bridgeContractName = "Bridged";
+      const tokenContractAddress = this.tokenContractAddress;
+      const tokenContractName = this.tokenContractName;
+      const bridgeContractAddress = this.bridgeContractAddress;
+      const bridgeContractName = this.bridgeContractName;
 
       const initialSenderBalance = await this.getStacksTokenBalance(
         senderAddress
@@ -268,30 +311,30 @@ class SIPtoSOLBridge {
     }
   }
 
-  async transferSOL(recipientAddress, amount) {
+  async transferSOLFromPDA(recipientAddress, amount) {
     try {
       const recipientPubKey = new PublicKey(recipientAddress);
       const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
 
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: this.solanaKeypair.publicKey,
-          toPubkey: recipientPubKey,
-          lamports,
-        })
-      );
-
       console.log(
-        `Initiating SOL transfer of ${amount} SOL (${lamports} lamports)...`
+        `Initiating SOL transfer of ${amount} SOL (${lamports} lamports) from PDA...`
       );
-      const signature = await this.connection.sendTransaction(transaction, [
-        this.solanaKeypair,
-      ]);
 
-      await this.connection.confirmTransaction(signature, "confirmed");
-      return signature;
+      // Use the program to transfer SOL from the PDA to the recipient
+      const tx = await this.program.methods
+        .transferFromPda(new BN(lamports), this.pdaBump)
+        .accounts({
+          pda: this.pdaAddress,
+          recipient: recipientPubKey,
+          payer: this.solanaKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      await this.connection.confirmTransaction(tx, "confirmed");
+      return tx;
     } catch (error) {
-      console.error("Error transferring SOL:", error);
+      console.error("Error transferring SOL from PDA:", error);
       throw error;
     }
   }
@@ -307,15 +350,18 @@ async function main() {
     // Create bridge instance
     const bridge = new SIPtoSOLBridge({
       solanaKeypair: solanaKeypair,
-      solanaRecipientAddress: "Cfez4iZDiEvATzbyBKiN1KDaPoBkyn82yuTpCZtpgtG4", // Example recipient
+      solanaRecipientAddress: "wHPN297UsAPwDsJDxKgCWCVTEWXBJ7divqnKW4fxKYj", // Updated recipient
       stacksPrivateKey:
         "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01",
       tokenContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
-      tokenContractName: "ADVT", // Updated to match your token name
+      tokenContractName: "ADVT",
       bridgeContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
       bridgeContractName: "Bridged",
-      conversionRate: 0.1, // Adjust as needed
-      decimals: 6, // Set to match your STONE token's decimals
+      programId: "HV2pqqq7dpW3JrxjhaWhC7etu6RjRLPzzSJ4FGDW49Cr",
+      pdaSeed: "death_god",
+      idlPath: "./idl.json",
+      conversionRate: 0.1,
+      decimals: 6,
     });
 
     // Initialize bridge
