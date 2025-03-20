@@ -77,20 +77,22 @@ class SolanaBridge {
 
   async checkStacksTokenBalance(tokenAddress, tokenName, ownerAddress) {
     try {
-      console.log(`Checking SIP-10 token balance for ${ownerAddress}...`);
-
-      const tokenContract = contractPrincipalCV(tokenAddress, tokenName);
+      const BridgeAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+      const Bridge = "StacksBridge";
+      console.log(
+        `Checking SIP-10 token balance for ${BridgeAddress}.${Bridge}`
+      );
 
       // Call the get-balance function of the SIP-10 token contract
       const response = await fetchCallReadOnlyFunction({
         contractAddress: tokenAddress,
         contractName: tokenName,
         functionName: "get-balance",
-        functionArgs: [standardPrincipalCV(ownerAddress)],
+        functionArgs: [contractPrincipalCV(BridgeAddress, Bridge)], // Use tokenAddress and tokenName directly
         senderAddress: ownerAddress,
         network: this.network,
       });
-
+      console.log("Response:", response);
       // Properly extract the value from the Clarity value
       let balance = 0;
 
@@ -160,12 +162,12 @@ class SolanaBridge {
         this.convertToScaledAmount(requiredSip10Amount);
 
       // Check if sender has enough SIP-10 tokens
-      const tokenAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-      const tokenName = "ADVT";
+      const BridgeAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
+      const BridgeName = "ADVT";
 
       const currentBalance = await this.checkStacksTokenBalance(
-        tokenAddress,
-        tokenName,
+        BridgeAddress,
+        BridgeName,
         this.stacksSenderAddress
       );
 
@@ -252,7 +254,7 @@ class SolanaBridge {
 
   async executeStacksTransfer({ amount, recipient, memo }) {
     const contractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    const contractName = "Bridged";
+    const contractName = "StacksBridge";
 
     const tokenAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
     const tokenName = "ADVT";
@@ -281,6 +283,8 @@ class SolanaBridge {
       fee: 2000n,
     };
 
+    console.log(txOptions);
+
     console.log("Creating Stacks transaction");
     console.log(
       `Sending ${
@@ -293,6 +297,8 @@ class SolanaBridge {
       transaction,
       network: this.network,
     });
+
+    console.log(broadcastResponse);
 
     console.log("Stacks Transfer Complete");
     console.log("Transaction ID:", broadcastResponse.txid);

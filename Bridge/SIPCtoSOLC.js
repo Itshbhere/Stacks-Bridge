@@ -67,7 +67,7 @@ class SIPtoSOLBridge {
     this.bridgeContractAddress =
       config.bridgeContractAddress ||
       "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
-    this.bridgeContractName = config.bridgeContractName || "Bridged";
+    this.bridgeContractName = config.bridgeContractName || "StacksBridge";
 
     // Solana PDA and Program configuration
     this.programId = new PublicKey(
@@ -356,7 +356,7 @@ async function main() {
       tokenContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
       tokenContractName: "ADVT",
       bridgeContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
-      bridgeContractName: "Bridged",
+      bridgeContractName: "StacksBridge",
       programId: "HV2pqqq7dpW3JrxjhaWhC7etu6RjRLPzzSJ4FGDW49Cr",
       pdaSeed: "death_god",
       idlPath: "./idl.json",

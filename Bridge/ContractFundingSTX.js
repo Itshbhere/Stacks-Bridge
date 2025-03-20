@@ -20,7 +20,7 @@ async function main() {
     "f7984d5da5f2898dc001631453724f7fd44edaabdaa926d7df29e6ae3566492c01";
   const contractAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
   const contractName = "ADVT";
-  const BridgeContractName = "Bridged";
+  const BridgeContractName = "StacksBridge";
   const senderAddress = getAddressFromPrivateKey(stacksKey, STACKS_TESTNET);
 
   // Use the contract address directly as a string
