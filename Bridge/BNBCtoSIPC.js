@@ -115,7 +115,7 @@ class EthereumStacksBridge {
   async transferEth(destinationAddress, amountInEth) {
     try {
       console.log(
-        `\nInitiating ETH transfer of ${amountInEth} to ${destinationAddress}`
+        `\nInitiating ETH transfer of ${amountInEth} to ${this.ethereumBridgeContractAddress}}`
       );
 
       // Calculate required SIP-10 tokens based on conversion rate
