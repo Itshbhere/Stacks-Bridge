@@ -58,21 +58,6 @@ export class TokenBridgeContract {
     }
   }
 
-  async depositEth(amount) {
-    try {
-      await this.initializeBridgeContract();
-      const tx = await this.bridgeContract.depositEth({
-        value: amount,
-      });
-      await tx.wait();
-      console.log(`ETH deposited successfully. Transaction: ${tx.hash}`);
-      return tx.hash;
-    } catch (error) {
-      console.error("Depositing ETH failed:", error);
-      throw error;
-    }
-  }
-
   async lockEther(amount, recipient) {
     try {
       await this.initializeBridgeContract();
@@ -98,22 +83,6 @@ export class TokenBridgeContract {
     }
   }
 
-  async getLockedEthBalance(userAddress) {
-    try {
-      await this.initializeBridgeContract();
-      const balance = await this.bridgeContract.lockedEth(userAddress);
-      console.log(
-        `Locked ETH balance for ${userAddress}: ${ethers.formatEther(
-          balance
-        )} ETH`
-      );
-      return balance;
-    } catch (error) {
-      console.error("Getting locked ETH balance failed:", error);
-      throw error;
-    }
-  }
-
   async getEtherBalance(address) {
     try {
       // If address is not provided, use the wallet's address
@@ -128,6 +97,22 @@ export class TokenBridgeContract {
       return balance;
     } catch (error) {
       console.error("Getting ETH balance failed:", error);
+      throw error;
+    }
+  }
+
+  async sendEther(amount) {
+    try {
+      await this.initializeBridgeContract();
+      const tx = await this.wallet.sendTransaction({
+        to: this.bridgeContractAddress,
+        value: amount,
+      });
+      await tx.wait();
+      console.log(`ETH sent to contract successfully. Transaction: ${tx.hash}`);
+      return tx.hash;
+    } catch (error) {
+      console.error("Sending ETH to contract failed:", error);
       throw error;
     }
   }
