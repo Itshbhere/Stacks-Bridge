@@ -1,12 +1,3 @@
-import {
-  Connection,
-  PublicKey,
-  clusterApiUrl,
-  Keypair,
-  SystemProgram,
-  Transaction,
-  LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
 import { TokenBridgeContract } from "./TokenBridgeClass.js";
 import { ethers } from "ethers";
 import { config } from "dotenv";
@@ -21,7 +12,6 @@ import {
   fetchCallReadOnlyFunction,
 } from "@stacks/transactions";
 import { STACKS_TESTNET } from "@stacks/network";
-import * as fs from "fs";
 import fetch from "node-fetch";
 import * as readline from "readline";
 
