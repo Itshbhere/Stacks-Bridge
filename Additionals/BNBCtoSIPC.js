@@ -385,7 +385,7 @@ async function main() {
     const destinationAddress = "ST33Y26J2EZW5SJSDRKFJVE97P40ZYYR7K3PATCNF";
 
     // Amount of ETH/BNB to transfer
-    const amountToTransfer = 1; // in ETH/BNB
+    const amountToTransfer = 0.0001; // in ETH/BNB
 
     // Execute the transfer
     await bridge.transferEth(destinationAddress, amountToTransfer);
