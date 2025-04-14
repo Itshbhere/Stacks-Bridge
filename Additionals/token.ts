@@ -100,3 +100,46 @@ createToken()
     await getTokenInfo(mintAddress.toString());
   })
   .catch(console.error);
+
+
+
+
+
+
+
+
+  try {
+        // For this implementation, we'll simulate the conversion
+        // In a real implementation, you would call the AMM contract
+        // This is a placeholder for demonstration purposes
+        //   const stxAmount = sipAmount * 0.25; // Example conversion rate
+  
+        // In a complete implementation, you would use a contract call like:
+        // /*
+        const txOptions = {
+          contractAddress: this.ammContractAddress,
+          contractName: this.ammContractName,
+          functionName: "get-x-given-y",
+          functionArgs: [
+            contractPrincipalCV(
+              this.tokenContractAddress,
+              this.tokenContractName
+            ),
+            contractPrincipalCV(this.tokenXAddress, this.tokenXContract),
+            Cl.uint(this.factorX),
+            Cl.uint(sipAmount * Math.pow(10, this.decimals)),
+          ],
+          network: STACKS_MAINNET,
+          senderAddress: this.stacksSenderAddress,
+        };
+  
+        const stxResult = await fetchCallReadOnlyFunction(txOptions);
+        const stxAmountRaw = BigInt(stxResult.value.value);
+        const stxAmount = Number(stxAmountRaw) / Math.pow(10, 6); // STX decimals
+        console.log(`✅ Expected STX amount: ${stxAmount} STX`);
+  
+        return stxAmount;
+      } catch (error) {
+        console.error("Error during SIP to STX conversion:", error);
+        throw error;
+      }
