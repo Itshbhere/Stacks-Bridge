@@ -8,12 +8,14 @@ import {
   broadcastTransaction,
   fetchCallReadOnlyFunction,
   cvToValue,
+  Cl,
 } from "@stacks/transactions";
 import { STACKS_TESTNET } from "@stacks/network";
 import { ethers } from "ethers";
 import fetch from "node-fetch";
 import fs from "fs";
 import { config } from "dotenv";
+import axios from "axios";
 config();
 
 global.fetch = fetch;
@@ -30,8 +32,24 @@ class EthereumStacksBridge {
     this.network = STACKS_TESTNET;
     this.decimals = 6;
 
-    // Set the conversion rate: 1 ETH = 10 SIP-10 tokens
-    this.conversionRate = config.conversionRate || 10;
+    // API configuration
+    this.conversionApiBaseUrl =
+      config.conversionApiBaseUrl ||
+      "https://dev-api-wallet.stonezone.gg/coin/convert";
+    this.fromCurrency = config.fromCurrency || "BNB";
+    this.toCurrency = config.toCurrency || "STX";
+
+    // AMM configuration for STX to Stone conversion
+    this.tokenXAddress =
+      config.tokenXAddress || "SP102V8P0F7JX67ARQ77WEA3D3CFB5XW39REDT0AM";
+    this.tokenXContract = config.tokenXContract || "token-wstx-v2";
+    this.tokenYAddress =
+      config.tokenYAddress || "SP2SF8P7AKN8NYHD57T96C51RRV9M0GKRN02BNHD2";
+    this.tokenYContract = config.tokenYContract || "token-wstone";
+    this.factorX = config.factorX || 100000000;
+    this.ammContractAddress =
+      config.ammContractAddress || "SP102V8P0F7JX67ARQ77WEA3D3CFB5XW39REDT0AM";
+    this.ammContractName = config.ammContractName || "amm-pool-v2-01";
   }
 
   async initialize() {
@@ -49,7 +67,7 @@ class EthereumStacksBridge {
       console.log("Ethereum-Stacks Bridge Initialized");
       console.log("Ethereum Wallet:", this.wallet.address);
       console.log("Stacks Sender:", this.stacksSenderAddress);
-      console.log("Conversion Rate: 1 ETH = 10 SIP-10 tokens");
+      console.log("Using dynamic conversion rate via API");
 
       return true;
     } catch (error) {
@@ -112,16 +130,99 @@ class EthereumStacksBridge {
     }
   }
 
+  /**
+   * Converts BNB to STX using the Stone Zone API
+   * @param {number} amount - Amount of BNB to convert
+   * @returns {Promise<number>} - The amount of STX received
+   */
+  async convertBnbToStx(amount) {
+    try {
+      console.log(
+        `🔄 Converting ${amount} ${this.fromCurrency} to ${this.toCurrency}...`
+      );
+
+      const url = `${this.conversionApiBaseUrl}/${this.fromCurrency}/${this.toCurrency}/${amount}`;
+      const response = await axios.get(url, {
+        headers: {
+          Accept: "*/*",
+        },
+      });
+
+      console.log("Conversion API Response:", response.data);
+
+      // Extract the STX amount from the response
+      const stxAmount = response.data.output || 0;
+      console.log(`✅ Received ${stxAmount} ${this.toCurrency}`);
+
+      return stxAmount;
+    } catch (error) {
+      console.error(
+        `Error during ${this.fromCurrency} to ${this.toCurrency} conversion:`,
+        error.response?.data || error.message
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Converts STX to Stone using the AMM pool
+   * @param {number} stxAmount - Amount of STX to convert
+   * @returns {Promise<number>} - The amount of Stone tokens received
+   */
+  async convertStxToStone(stxAmount) {
+    console.log(`🔄 Converting ${stxAmount} STX to Stone...`);
+
+    // Convert STX amount to micro STX (assuming 6 decimal places)
+    const microStxAmount = Math.floor(stxAmount * 1000000);
+
+    // Define transaction options for the contract call
+    const txOptions = {
+      contractAddress: this.ammContractAddress,
+      contractName: this.ammContractName,
+      functionName: "get-helper",
+      functionArgs: [
+        contractPrincipalCV(this.tokenXAddress, this.tokenXContract),
+        contractPrincipalCV(this.tokenYAddress, this.tokenYContract),
+        Cl.uint(this.factorX),
+        Cl.uint(microStxAmount),
+      ],
+      network: "mainnet", // Use this.network instead if you're using testnet
+      senderAddress: this.stacksSenderAddress,
+    };
+
+    try {
+      // Call the smart contract to get the estimated Stone amount
+      const stoneResult = await fetchCallReadOnlyFunction(txOptions);
+
+      if (!stoneResult || !stoneResult.value) {
+        throw new Error("Invalid response from the contract");
+      }
+
+      const stoneAmountRaw = BigInt(stoneResult.value.value); // Extract raw amount
+      const stoneAmount = Number(stoneAmountRaw) / Number(1000000); // Convert to human-readable format
+      console.log(`✅ Expected Stone amount: ${stoneAmount} Stone`);
+
+      return stoneAmount;
+    } catch (error) {
+      console.error("Error during STX to Stone conversion:", error);
+      throw error;
+    }
+  }
+
   async transferEth(destinationAddress, amountInEth) {
     try {
       console.log(
-        `\nInitiating ETH transfer of ${amountInEth} to ${this.ethereumBridgeContractAddress}}`
+        `\nInitiating ETH transfer of ${amountInEth} to ${this.ethereumBridgeContractAddress}`
       );
 
-      // Calculate required SIP-10 tokens based on conversion rate
-      const requiredSip10Amount = amountInEth * this.conversionRate;
-      const scaledRequiredAmount =
-        this.convertToScaledAmount(requiredSip10Amount);
+      // Step 1: Convert ETH/BNB to STX using API
+      const stxAmount = await this.convertBnbToStx(amountInEth);
+
+      // Step 2: Convert STX to Stone using AMM
+      const stoneAmount = await this.convertStxToStone(stxAmount);
+
+      // Calculate the scaled amount for the contract
+      const scaledAmount = this.convertToScaledAmount(stoneAmount);
 
       // Check if sender has enough SIP-10 tokens
       const BridgeAddress = "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA";
@@ -133,8 +234,8 @@ class EthereumStacksBridge {
         this.stacksSenderAddress
       );
 
-      if (currentBalance < scaledRequiredAmount) {
-        const formattedRequired = requiredSip10Amount.toFixed(this.decimals);
+      if (currentBalance < scaledAmount) {
+        const formattedRequired = stoneAmount.toFixed(this.decimals);
         const formattedBalance = (
           currentBalance / Math.pow(10, this.decimals)
         ).toFixed(this.decimals);
@@ -156,7 +257,7 @@ class EthereumStacksBridge {
       console.log("Transaction Hash:", receipt.hash);
 
       // Process the corresponding Stacks transfer
-      await this.processTransfer(amountInEth, receipt.hash, destinationAddress);
+      await this.processTransfer(stoneAmount, receipt.hash, destinationAddress);
 
       return receipt.hash;
     } catch (error) {
@@ -165,17 +266,13 @@ class EthereumStacksBridge {
     }
   }
 
-  async processTransfer(transferAmount, signature, recipientAddress) {
+  async processTransfer(tokenAmount, signature, recipientAddress) {
     console.log("\nProcessing corresponding Stacks transfer");
-    console.log("Amount:", transferAmount, "ETH");
-
-    // Apply conversion rate: 1 ETH = 10 SIP-10 tokens
-    const sip10Amount = transferAmount * this.conversionRate;
-    console.log("Converting to:", sip10Amount, "SIP-10 tokens");
+    console.log("Amount:", tokenAmount, "Stone tokens");
 
     try {
       // Convert the SIP-10 amount to the proper decimal representation
-      const scaledAmount = this.convertToScaledAmount(sip10Amount);
+      const scaledAmount = this.convertToScaledAmount(tokenAmount);
 
       // Execute Stacks transfer
       const stacksTxId = await this.executeStacksTransfer({
@@ -267,7 +364,17 @@ async function main() {
     stacksContractAddress: "ST1X8ZTAN1JBX148PNJY4D1BPZ1QKCKV3H3CK5ACA",
     stacksContractName: "ADVT",
     ethereumBridgeContractAddress: "0x365bc3A714E2a40beB8CC8A9752beE89bC0c02d3",
-    conversionRate: 10, // 1 ETH = 10 SIP-10 tokens
+    // API and AMM configuration
+    conversionApiBaseUrl: "https://dev-api-wallet.stonezone.gg/coin/convert",
+    fromCurrency: "BNB", // Change to "ETH" if needed
+    toCurrency: "STX",
+    tokenXAddress: "SP102V8P0F7JX67ARQ77WEA3D3CFB5XW39REDT0AM",
+    tokenXContract: "token-wstx-v2",
+    tokenYAddress: "SP2SF8P7AKN8NYHD57T96C51RRV9M0GKRN02BNHD2",
+    tokenYContract: "token-wstone",
+    factorX: 100000000,
+    ammContractAddress: "SP102V8P0F7JX67ARQ77WEA3D3CFB5XW39REDT0AM",
+    ammContractName: "amm-pool-v2-01",
   });
 
   try {
@@ -277,8 +384,8 @@ async function main() {
     // Destination Stacks address to transfer tokens to
     const destinationAddress = "ST33Y26J2EZW5SJSDRKFJVE97P40ZYYR7K3PATCNF";
 
-    // Amount of ETH to transfer
-    const amountToTransfer = 1; // in ETH
+    // Amount of ETH/BNB to transfer
+    const amountToTransfer = 0.0001; // in ETH/BNB
 
     // Execute the transfer
     await bridge.transferEth(destinationAddress, amountToTransfer);
